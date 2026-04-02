@@ -1,0 +1,11 @@
+[project]
+name = "risklens"
+version = "0.1.0"
+description = "Investor Risk Assistant"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

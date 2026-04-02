@@ -1,0 +1,13 @@
+streamlit
+pandas
+numpy
+matplotlib
+plotly
+yfinance
+requests
+trafilatura
+transformers
+scikit-learn
+pytest
+ruff
+pre-commit
