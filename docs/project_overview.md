@@ -1,45 +1,47 @@
 # Project Overview
 
-## Project Name
+## RiskLens — Investor Risk Assistant
 
-RiskLens — Investor Risk Assistant
-
-## Purpose
-
-RiskLens is a decision-support application designed to help investors assess financial asset risk through data-driven analysis and clear, interpretable outputs. It provides contextual risk information rather than trading recommendations.
+Decision-support app for contextual financial asset risk assessment. Built with Python and Streamlit.
 
 ## MVP Scope
 
-- Historical risk analysis (volatility, drawdown, rolling metrics).
-- Monte Carlo simulation for forward-looking risk estimation.
-- Later phase: news sentiment integration for contextual risk signals.
+- **Historical risk analysis** — returns, volatility, drawdowns, rolling metrics.
+- **Monte Carlo simulation** — VaR, CVaR, forward-looking risk estimation.
+- **Optional: news sentiment** — lightweight contextual risk signals.
 
 ## Non-Goals
 
-- Price prediction.
-- Trading signals.
-- Portfolio management.
+- Price prediction
+- Trading signals
+- Portfolio management
 
-## Architecture Summary
+## Architecture
 
-- **Frontend**: Streamlit application (`app/streamlit_app.py`).
-- **Core logic**: Python modules under `src/` organized by domain responsibility (`data`, `analytics`, `pipelines`, `services`, `domain`, `utils`).
-- **Tests**: Located in `tests/`.
-- **Documentation**: Located in `docs/`.
+- **Frontend**: Streamlit (`app/streamlit_app.py`)
+- **Core logic**: Python modules under `src/` (data, analytics, pipelines, services, domain, utils)
+- **Tests**: `tests/`
+- **Docs**: `docs/`
 
-## Tooling Summary
+## Tooling
 
 - **Language**: Python 3.10+
 - **UI**: Streamlit
 - **Data**: pandas, NumPy, yfinance
-- **Visualization**: matplotlib, Plotly
-- **NLP**: Transformers, Trafilatura
-- **ML**: scikit-learn
+- **Stats**: SciPy, statsmodels, scikit-learn
+- **Visualization**: matplotlib, seaborn, Plotly
 - **Quality**: Ruff, pre-commit, pytest
+
+## Data Handling Policy
+
+- Fetch only what's needed for current analysis.
+- One file per asset maximum, overwrite on refresh.
+- No raw data persistence. No growing local store.
+- `python main.py --purge` removes all cached data.
 
 ## Product Principles
 
-- **Simple inputs** — The user provides minimal information to get meaningful results.
-- **Interpretable outputs** — All results are presented clearly with no black-box metrics.
-- **Minimal friction** — The interface stays out of the way and focuses on delivering value.
-- **No unnecessary complexity** — Every feature must justify its existence.
+- **Simple inputs** — minimal user effort for meaningful results.
+- **Interpretable outputs** — no black-box metrics.
+- **Minimal friction** — interface stays out of the way.
+- **No unnecessary complexity** — every feature justifies its existence.
