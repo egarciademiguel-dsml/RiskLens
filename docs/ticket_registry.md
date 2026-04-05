@@ -11,3 +11,6 @@
 | RL-007 | Monte Carlo + analysis notebook | Done   | src/analytics/monte_carlo.py, notebooks/ | GBM, VaR/CVaR |
 | RL-008 | Streamlit app (full UI)         | Done   | app/streamlit_app.py          | Pure integration, no logic |
 | RL-009 | Test suite                      | Done   | tests/                        | 75 tests, exact assertions, edge cases |
+| RL-010 | CI + Deployment                  | Done   | .github/workflows/, .streamlit/ | GitHub Actions, Streamlit Cloud config |
+| RL-011 | Final presentation package       | Done   | notebooks/, docs/             | Clean walkthrough notebook, removed scratch |
+| RL-012 | Repo & README polish             | Done   | README.md, LICENSE, .gitignore, src/ | Removed empty dirs, MIT license, full README |

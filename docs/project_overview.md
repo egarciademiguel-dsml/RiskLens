@@ -19,7 +19,7 @@ Decision-support app for contextual financial asset risk assessment. Built with 
 ## Architecture
 
 - **Frontend**: Streamlit (`app/streamlit_app.py`)
-- **Core logic**: Python modules under `src/` (data, analytics, pipelines, services, domain, utils)
+- **Core logic**: Python modules under `src/` (data, analytics)
 - **Tests**: `tests/`
 - **Docs**: `docs/`
 
