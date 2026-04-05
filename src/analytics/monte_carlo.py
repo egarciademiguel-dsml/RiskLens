@@ -61,9 +61,12 @@ def prob_target(
     initial_price: float,
     target_pct: float,
 ) -> float:
-    """Probability of reaching a specific return target (e.g., 0.20 for +20%)."""
+    """Probability of reaching a specific return target (e.g., 0.20 for +20%).
+
+    Uses strict inequality (>) for consistency with prob_gain in simulation_summary.
+    """
     returns = (final_prices - initial_price) / initial_price
-    return float((returns >= target_pct).mean())
+    return float((returns > target_pct).mean())
 
 
 def scenario_buckets(

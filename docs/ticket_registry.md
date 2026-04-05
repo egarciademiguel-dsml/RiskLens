@@ -10,3 +10,4 @@
 | RL-006 | Historical risk analytics      | Done   | src/analytics/risk_metrics.py | Series-in API, pure functions |
 | RL-007 | Monte Carlo + analysis notebook | Done   | src/analytics/monte_carlo.py, notebooks/ | GBM, VaR/CVaR |
 | RL-008 | Streamlit app (full UI)         | Done   | app/streamlit_app.py          | Pure integration, no logic |
+| RL-009 | Test suite                      | Done   | tests/                        | 75 tests, exact assertions, edge cases |

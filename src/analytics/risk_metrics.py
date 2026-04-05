@@ -34,10 +34,10 @@ def sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
 def sortino_ratio(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
     """Like Sharpe but only penalizes downside volatility."""
     excess = returns.mean() - risk_free_rate / TRADING_DAYS_PER_YEAR
-    downside = returns[returns < 0].std()
-    if downside == 0:
+    downside_returns = returns[returns < 0]
+    if len(downside_returns) == 0 or downside_returns.std() == 0:
         return 0.0
-    return (excess / downside) * np.sqrt(TRADING_DAYS_PER_YEAR)
+    return (excess / downside_returns.std()) * np.sqrt(TRADING_DAYS_PER_YEAR)
 
 
 def gain_to_pain_ratio(returns: pd.Series) -> float:
