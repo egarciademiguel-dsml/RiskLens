@@ -14,3 +14,6 @@
 | RL-010 | CI + Deployment                  | Done   | .github/workflows/, .streamlit/ | GitHub Actions, Streamlit Cloud config |
 | RL-011 | Final presentation package       | Done   | notebooks/, docs/             | Clean walkthrough notebook, removed scratch |
 | RL-012 | Repo & README polish             | Done   | README.md, LICENSE, .gitignore, src/ | Removed empty dirs, MIT license, full README |
+| RL-013 | Fat-tailed Monte Carlo (Student-t) | Done | src/analytics/monte_carlo.py, app/, tests/ | t-distributed shocks, auto-fit df, UI toggle |
+| RL-014 | GARCH(1,1) volatility model       | Done | src/analytics/monte_carlo.py, app/, tests/ | Time-varying vol, arch library, UI toggle |
+| RL-015 | Test refactor + math reference + model comparison | Done | tests/, docs/, notebooks/ | Property-based tests, 61 total, math doc, comparison notebook |

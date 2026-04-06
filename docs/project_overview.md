@@ -7,7 +7,7 @@ Decision-support app for contextual financial asset risk assessment. Built with 
 ## MVP Scope
 
 - **Historical risk analysis** — returns, volatility, drawdowns, rolling metrics.
-- **Monte Carlo simulation** — VaR, CVaR, forward-looking risk estimation.
+- **Monte Carlo simulation** — VaR, CVaR, forward-looking risk estimation. Supports Normal/Student-t shocks and Constant/GARCH(1,1) volatility models.
 - **Optional: news sentiment** — lightweight contextual risk signals.
 
 ## Non-Goals

@@ -27,6 +27,8 @@ from src.analytics.monte_carlo import (
     prob_target,
     scenario_buckets,
     simulation_summary,
+    fit_t_distribution,
+    fit_garch,
 )
 
 sns.set_theme(style="whitegrid")
@@ -46,6 +48,20 @@ with st.sidebar:
     end_date = st.date_input("End date", value=pd.Timestamp.now())
 
     st.subheader("Monte Carlo")
+    dist_choice = st.radio(
+        "Shock Distribution",
+        options=["Normal (Gaussian)", "Student-t (fat tails)"],
+        index=0,
+        help="Student-t captures extreme events better. Degrees of freedom auto-fitted from data.",
+    )
+    use_t = dist_choice.startswith("Student-t")
+    vol_choice = st.radio(
+        "Volatility Model",
+        options=["Constant", "GARCH(1,1)"],
+        index=0,
+        help="GARCH captures volatility clustering — high-vol periods follow high-vol periods.",
+    )
+    use_garch = vol_choice == "GARCH(1,1)"
     n_days = st.slider("Forecast horizon (days)", min_value=30, max_value=504, value=252, step=1)
     n_sims = st.select_slider("Simulations", options=[1000, 5000, 10000, 25000, 50000], value=10000)
     confidence = st.select_slider("Confidence level", options=[0.90, 0.95, 0.99], value=0.95)
@@ -84,10 +100,41 @@ st.success(f"Loaded {len(df)} trading days for **{ticker}**")
 # --- Win / Lose probability ---
 
 with st.spinner("Running Monte Carlo simulation..."):
-    paths = simulate_paths(close, returns, n_days=n_days, n_simulations=n_sims)
+    dist_str = "t" if use_t else "normal"
+    vol_str = "garch" if use_garch else "constant"
+
+    t_info = fit_t_distribution(returns) if use_t else None
+    garch_info = fit_garch(returns) if use_garch else None
+
+    paths = simulate_paths(
+        close, returns, n_days=n_days, n_simulations=n_sims,
+        distribution=dist_str,
+        df_t=t_info["df"] if t_info else None,
+        volatility_model=vol_str,
+        garch_params=garch_info,
+    )
+
+    dist_label = f"Student-t (df={t_info['df']:.1f})" if use_t else "Normal"
+    vol_label = "GARCH(1,1)" if use_garch else "Constant σ"
+    model_label = f"{dist_label}, {vol_label}"
+
     final_prices = paths.iloc[-1]
     initial_price = close.iloc[-1]
     summary = simulation_summary(final_prices, initial_price, confidence=confidence)
+
+if use_t and t_info is not None:
+    st.info(
+        f"**Student-t fit:** df = {t_info['df']:.2f} | "
+        f"{t_info['tail_description']} | "
+        f"Based on {t_info['n_observations']} observations"
+    )
+if use_garch and garch_info is not None:
+    st.info(
+        f"**GARCH(1,1) fit:** α = {garch_info['alpha']:.4f}, "
+        f"β = {garch_info['beta']:.4f}, "
+        f"persistence = {garch_info['persistence']:.4f} | "
+        f"Long-run vol = {garch_info['long_run_vol']:.2%}"
+    )
 
 col_win, col_lose = st.columns(2)
 col_win.metric("Probability of Gain", f"{summary['prob_gain']:.1%}")
@@ -181,7 +228,7 @@ with tab_mc:
     ax_mc.plot(paths.quantile(0.05, axis=1), color="crimson", linewidth=1, linestyle="--", label="5th percentile")
     ax_mc.plot(paths.quantile(0.95, axis=1), color="green", linewidth=1, linestyle="--", label="95th percentile")
     ax_mc.axhline(initial_price, color="orange", linewidth=1, linestyle=":", label=f"Initial: ${initial_price:,.0f}")
-    ax_mc.set_title(f"{ticker} — Monte Carlo Paths ({n_sims:,} sims, {n_days} days)")
+    ax_mc.set_title(f"{ticker} — Monte Carlo Paths ({n_sims:,} sims, {n_days} days, {model_label})")
     ax_mc.set_xlabel("Trading Day")
     ax_mc.set_ylabel("Price (USD)")
     ax_mc.legend(loc="upper left")
