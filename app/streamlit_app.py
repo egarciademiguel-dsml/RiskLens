@@ -37,6 +37,15 @@ from src.analytics.monte_carlo import (
     fit_rvol,
     predict_current_vol,
 )
+from src.analytics.backtesting import (
+    backtest_var,
+    backtest_summary,
+    constant_fit,
+    garch_fit,
+    hmm_fit,
+    gmm_fit,
+    rvol_fit,
+)
 
 sns.set_theme(style="whitegrid")
 
@@ -259,8 +268,8 @@ st.divider()
 # --- Charts in tabs ---
 
 st.subheader("Charts")
-tab_price, tab_returns, tab_vol, tab_mc, tab_dist = st.tabs(
-    ["Price & Drawdown", "Returns Distribution", "Rolling Volatility", "Monte Carlo Paths", "Final Price Distribution"]
+tab_price, tab_returns, tab_vol, tab_mc, tab_dist, tab_bt = st.tabs(
+    ["Price & Drawdown", "Returns Distribution", "Rolling Volatility", "Monte Carlo Paths", "Final Price Distribution", "VaR Backtest"]
 )
 
 with tab_price:
@@ -342,6 +351,72 @@ with tab_dist:
     ax_d.legend()
     plt.tight_layout()
     st.pyplot(fig_d)
+
+with tab_bt:
+    st.markdown("Rolling-window VaR backtest — checks if predicted VaR is consistent with observed losses.")
+    bt_col1, bt_col2 = st.columns(2)
+    with bt_col1:
+        bt_window = st.slider("Training window (days)", min_value=126, max_value=504, value=252, step=1, key="bt_window")
+    with bt_col2:
+        bt_step = st.slider("Test every N days", min_value=1, max_value=10, value=5, step=1, key="bt_step")
+
+    if st.button("Run Backtest", key="bt_run"):
+        # Select fit function based on current model choice
+        from functools import partial
+        if use_hmm:
+            fit_fn = partial(hmm_fit, n_regimes=n_regimes)
+        elif use_gmm:
+            fit_fn = partial(gmm_fit, n_regimes=n_regimes)
+        elif use_garch:
+            fit_fn = garch_fit
+        elif use_rvol:
+            fit_fn = partial(rvol_fit, horizon=rvol_horizon)
+        else:
+            fit_fn = constant_fit
+
+        with st.spinner("Running backtest (this may take a minute)..."):
+            bt_results = backtest_var(
+                close, returns, fit_fn=fit_fn,
+                train_window=bt_window, confidence=confidence,
+                n_simulations=2000, step=bt_step,
+            )
+
+        if len(bt_results) == 0:
+            st.warning("Not enough data for backtest with this window size.")
+        else:
+            bt_sum = backtest_summary(bt_results, confidence=confidence)
+
+            # Metrics
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1.metric("Observations", bt_sum["n_obs"])
+            mc2.metric("Breaches", f"{bt_sum['n_breaches']} ({bt_sum['breach_rate']:.1%})")
+            mc3.metric("Kupiec p-value", f"{bt_sum['kupiec']['p_value']:.3f}")
+            mc4.metric("Christoffersen p-value", f"{bt_sum['christoffersen']['p_value']:.3f}")
+
+            # Pass/fail
+            k_status = "PASS" if bt_sum["kupiec"]["pass"] else "FAIL"
+            c_status = "PASS" if bt_sum["christoffersen"]["pass"] else "FAIL"
+            expected = bt_sum["expected_rate"]
+            st.markdown(
+                f"**Expected breach rate:** {expected:.1%} | "
+                f"**Observed:** {bt_sum['breach_rate']:.1%} | "
+                f"**Kupiec:** {k_status} | **Christoffersen:** {c_status}"
+            )
+
+            # Chart: actual returns vs VaR with breach markers
+            fig_bt, ax_bt = plt.subplots(figsize=(12, 5))
+            ax_bt.plot(bt_results.index, bt_results["actual_return"], color="steelblue", linewidth=0.6, alpha=0.7, label="Actual return")
+            ax_bt.plot(bt_results.index, bt_results["predicted_var"], color="crimson", linewidth=1, linestyle="--", label=f"VaR {confidence:.0%}")
+            breaches = bt_results[bt_results["breach"]]
+            if len(breaches) > 0:
+                ax_bt.scatter(breaches.index, breaches["actual_return"], color="red", s=20, zorder=5, label=f"Breaches ({len(breaches)})")
+            ax_bt.axhline(0, color="gray", linewidth=0.5)
+            ax_bt.set_title(f"{ticker} — VaR Backtest ({vol_label}, {confidence:.0%})")
+            ax_bt.set_xlabel("Date")
+            ax_bt.set_ylabel("Daily Return")
+            ax_bt.legend(fontsize=8)
+            plt.tight_layout()
+            st.pyplot(fig_bt)
 
 st.divider()
 

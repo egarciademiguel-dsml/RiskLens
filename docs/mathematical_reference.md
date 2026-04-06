@@ -145,24 +145,68 @@ drift(t) = μ - 0.5 × σ²(t)
 log_return(t) = drift(t) + σ(t) × Z(t)
 ```
 
+**HMM Regime Detection (implemented):**
+
+Markets alternate between latent states (regimes), each with distinct drift and volatility. A Hidden Markov Model learns these states from observed returns.
+
+```
+Hidden states: S(t) ∈ {1, ..., K}
+Transition matrix: A(i,j) = P(S(t)=j | S(t-1)=i)
+Emission per regime k: r(t) | S(t)=k ~ N(μ(k), σ(k)²)
+```
+
+- **Fitting**: Baum-Welch algorithm (EM) maximizes P(observations | model)
+- **Decoding**: Viterbi algorithm finds most likely state sequence
+- **Regimes sorted by σ ascending**: regime 0 = calmest, regime K-1 = most volatile
+- **Simulation**: At each step, transition to next regime via A, then draw from that regime's N(μ(k), σ(k))
+
+Typical setup: K=2 (calm/crisis) or K=3 (calm/moderate/crisis). K=1 reduces to constant model.
+
+**GMM Regime Detection (implemented):**
+
+Alternative to HMM: cluster returns using feature engineering + Gaussian Mixture Model, then classify with Random Forest.
+
+```
+Features: rolling_vol(5,10,21,63d), rolling_mean(5,10,21d), skew, kurtosis
+GMM: fit K Gaussians to feature space → cluster labels
+RF classifier: features → regime label (for real-time prediction)
+Transition matrix: estimated from observed label sequences (empirical Markov)
+```
+
+Same simulation logic as HMM: Markov transitions + per-regime μ(k), σ(k). The difference is in fitting — GMM uses richer features but doesn't learn transitions natively.
+
+**XGBoost Realized Volatility (implemented):**
+
+ML-driven volatility prediction. Instead of parametric models, use gradient-boosted trees to predict forward realized vol.
+
+```
+Target: σ_realized(t, h) = std(r(t+1), ..., r(t+h))    for horizon h
+Features (12): rolling_vol(5,10,21,63d), rolling_mean(5,10,21d),
+               rolling_skew(21d), rolling_kurtosis(21d), |r(t)|, r(t)²
+```
+
+- Trained on historical (features, target) pairs with `XGBRegressor`
+- Predicted σ replaces constant/GARCH σ in GBM: `log_return(t) = (μ - 0.5σ_pred²) + σ_pred × Z(t)`
+- Horizons: 5d (weekly), 10d (biweekly), 21d (monthly)
+- Evaluation: R² on training set (no forward leakage — target is future vol)
+
 **Not yet implemented:**
 - EGARCH: allows asymmetric response (negative shocks increase vol more than positive — leverage effect).
 - GJR-GARCH: similar asymmetry via indicator function for negative returns.
-- Regime-switching (HMM): discrete market states (calm/crisis) each with own μ, σ.
 - Stochastic volatility: volatility itself follows a random process (Heston model).
 
 ---
 
 ## 4. Model Combinations
 
-The two dimensions are independent:
+The volatility and shock dimensions are independent. RiskLens implements 5 volatility models × 2 shock distributions:
 
-| | Constant σ | GARCH(1,1) σ(t) |
-|---|---|---|
-| **Normal Z** | Textbook GBM | Vol clustering, thin tails |
-| **Student-t Z** | Fat tails, flat vol | **Vol clustering + fat tails** |
+| | Constant σ | GARCH(1,1) σ(t) | HMM regimes | GMM regimes | XGBoost σ_pred |
+|---|---|---|---|---|---|
+| **Normal Z** | Textbook GBM | Vol clustering | Regime-switching drift+vol | Feature-based regimes | ML-predicted vol |
+| **Student-t Z** | Fat tails | **Clustering + fat tails** | Regimes + fat tails | Regimes + fat tails | ML vol + fat tails |
 
-The bottom-right cell (GARCH + Student-t) is the most realistic for financial data.
+Additionally, regime models (HMM, GMM) support K=1,2,3 regimes, and XGBoost supports 5/10/21-day horizons — yielding 13 configurations in total.
 
 ---
 
@@ -177,6 +221,7 @@ The bottom-right cell (GARCH + Student-t) is the most realistic for financial da
 | Symmetric shocks (Student-t) | Left/right tails equal | Skewed-t would address this |
 | No transaction costs | Gross returns | Acceptable for risk estimation |
 | 252 trading days/year | Industry standard | Approximate; varies by market |
+| Stationarity within training window (backtest) | Model params fixed per window | Rolling refit; shorter windows adapt faster but noisier |
 
 ---
 
@@ -187,3 +232,82 @@ The bottom-right cell (GARCH + Student-t) is the most realistic for financial da
 - **Sharpe = 0.5**: For every unit of risk, you get 0.5 units of excess return. >1 is strong.
 - **GARCH persistence = 0.97**: After a volatility spike, it takes ~33 days to halve (`ln(2)/ln(0.97) ≈ 23`, but roughly: `1/(1-0.97) ≈ 33` day half-life).
 - **Student-t df = 4**: Tails are ~3x heavier than normal at the 1% level. Extreme events are much more likely.
+
+---
+
+## 7. VaR Backtesting
+
+A model that produces VaR numbers is useless unless those numbers are validated. Backtesting checks whether predicted VaR is consistent with observed losses.
+
+### Rolling Window Approach
+
+```
+For each day t in test period:
+  1. Fit model on returns[t-W : t]     (training window of W days)
+  2. Run MC simulation → compute 1-day VaR(α)
+  3. Observe actual return r(t+1)
+  4. Record breach: I(t) = 1 if r(t+1) < VaR(α)
+```
+
+If the model is correctly calibrated, the breach rate should converge to `(1 - α)`. A 95% VaR should be breached ~5% of the time.
+
+### Kupiec Test (1995) — Unconditional Coverage
+
+Tests whether the observed breach rate differs from the expected rate.
+
+```
+H₀: p = p₀ = (1 - α)
+H₁: p ≠ p₀
+
+LR_uc = -2 ln[L(p₀) / L(p̂)]
+      = -2 ln[(1-p₀)^(n-x) × p₀^x] + 2 ln[(1-p̂)^(n-x) × p̂^x]
+
+where n = total observations, x = total breaches, p̂ = x/n
+LR_uc ~ χ²(1) under H₀
+```
+
+Reject H₀ if p-value < 0.05 → the model's VaR is miscalibrated.
+
+**Edge cases**: If x=0 (no breaches) or x=n (all breaches), the model is clearly wrong. The LR formula handles x=0 via `p̂^0 = 1`.
+
+### Christoffersen Test (1998) — Independence
+
+A model can have the right breach rate but cluster all breaches together (e.g., 10 consecutive breaches in a crash, then none for a year). This test checks that breaches are i.i.d.
+
+```
+Build 2×2 transition matrix from breach sequence:
+  n₀₀ = no-breach → no-breach
+  n₀₁ = no-breach → breach
+  n₁₀ = breach → no-breach
+  n₁₁ = breach → breach
+
+π₀₁ = n₀₁ / (n₀₀ + n₀₁)    (prob of breach after no-breach)
+π₁₁ = n₁₁ / (n₁₀ + n₁₁)    (prob of breach after breach)
+p̂   = (n₀₁ + n₁₁) / n       (unconditional breach rate)
+
+H₀: π₀₁ = π₁₁ (breaches are independent of prior state)
+
+LR_ind = -2 ln[L_independent / L_markov]
+LR_ind ~ χ²(1) under H₀
+```
+
+Reject H₀ if p-value < 0.05 → breaches are clustered, the model fails to capture volatility dynamics.
+
+### Conditional Coverage (Joint Test)
+
+The combined test checks both coverage and independence simultaneously:
+
+```
+LR_cc = LR_uc + LR_ind ~ χ²(2)
+```
+
+A model passes if it has both: (1) correct breach rate and (2) independent breaches.
+
+### Interpretation
+
+| Result | Meaning |
+|--------|---------|
+| Kupiec pass, Christoffersen pass | Model is well-calibrated |
+| Kupiec fail (too many breaches) | Model underestimates risk |
+| Kupiec fail (too few breaches) | Model is too conservative |
+| Christoffersen fail | Breaches cluster — model misses vol dynamics |

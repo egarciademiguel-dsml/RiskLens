@@ -21,3 +21,5 @@
 | RL-017 | GMM clustering + classifier regime detection | Done | src/analytics/regime_gmm.py, tests/, app/ | sklearn GMM+RF, feature engineering, n=1/2/3 |
 | RL-018 | Regime model comparison notebook | Done | notebooks/regime_comparison.ipynb | HMM vs GMM × 1/2/3 regimes, risk impact study |
 | RL-019 | Realized volatility regression (XGBoost) | Done | src/analytics/vol_rvol.py, tests/, app/ | 5/10/21d horizons, feature engineering, ML-predicted σ |
+| RL-020 | Notebook consolidation (3→2) | Done | notebooks/ | Walkthrough + Deep Dive, deleted 3 stale notebooks |
+| RL-021 | VaR Backtesting | Done | src/analytics/backtesting.py, tests/, app/, notebooks/, docs/ | Kupiec + Christoffersen tests, rolling-window engine, Streamlit tab |
