@@ -3,10 +3,12 @@ numpy
 yfinance
 scipy
 arch
+hmmlearn
 matplotlib
 seaborn
 plotly
 scikit-learn
+xgboost
 statsmodels
 streamlit
 requests

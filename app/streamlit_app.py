@@ -6,6 +6,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import numpy as np
 
 from src.data.validate import validate_ticker
 from src.data.fetch import fetch_asset_data
@@ -29,6 +30,12 @@ from src.analytics.monte_carlo import (
     simulation_summary,
     fit_t_distribution,
     fit_garch,
+    fit_hmm,
+    predict_current_regime,
+    fit_gmm,
+    gmm_predict_current_regime,
+    fit_rvol,
+    predict_current_vol,
 )
 
 sns.set_theme(style="whitegrid")
@@ -57,11 +64,19 @@ with st.sidebar:
     use_t = dist_choice.startswith("Student-t")
     vol_choice = st.radio(
         "Volatility Model",
-        options=["Constant", "GARCH(1,1)"],
+        options=["Constant", "GARCH(1,1)", "HMM Regimes", "GMM Regimes", "ML Volatility (XGBoost)"],
         index=0,
-        help="GARCH captures volatility clustering — high-vol periods follow high-vol periods.",
+        help="GARCH captures volatility clustering. HMM/GMM detect market regimes. ML Vol uses XGBoost to predict forward realized volatility.",
     )
     use_garch = vol_choice == "GARCH(1,1)"
+    use_hmm = vol_choice == "HMM Regimes"
+    use_gmm = vol_choice == "GMM Regimes"
+    use_rvol = vol_choice == "ML Volatility (XGBoost)"
+
+    if use_hmm or use_gmm:
+        n_regimes = st.select_slider("Number of regimes", options=[1, 2, 3], value=2)
+    if use_rvol:
+        rvol_horizon = st.select_slider("Volatility horizon (days)", options=[5, 10, 21], value=21)
     n_days = st.slider("Forecast horizon (days)", min_value=30, max_value=504, value=252, step=1)
     n_sims = st.select_slider("Simulations", options=[1000, 5000, 10000, 25000, 50000], value=10000)
     confidence = st.select_slider("Confidence level", options=[0.90, 0.95, 0.99], value=0.95)
@@ -101,21 +116,52 @@ st.success(f"Loaded {len(df)} trading days for **{ticker}**")
 
 with st.spinner("Running Monte Carlo simulation..."):
     dist_str = "t" if use_t else "normal"
-    vol_str = "garch" if use_garch else "constant"
+    if use_hmm:
+        vol_str = "hmm"
+    elif use_gmm:
+        vol_str = "gmm"
+    elif use_garch:
+        vol_str = "garch"
+    elif use_rvol:
+        vol_str = "rvol"
+    else:
+        vol_str = "constant"
 
     t_info = fit_t_distribution(returns) if use_t else None
     garch_info = fit_garch(returns) if use_garch else None
+    hmm_info = fit_hmm(returns, n_regimes=n_regimes) if use_hmm else None
+    gmm_info = fit_gmm(returns, n_regimes=n_regimes) if use_gmm else None
+    rvol_info = fit_rvol(returns, horizon=rvol_horizon) if use_rvol else None
+
+    model_kwargs = {}
+    if use_garch:
+        model_kwargs["garch_params"] = garch_info
+    if use_hmm:
+        model_kwargs["hmm_params"] = hmm_info
+    if use_gmm:
+        model_kwargs["gmm_params"] = gmm_info
+    if use_rvol:
+        model_kwargs["rvol_params"] = rvol_info
 
     paths = simulate_paths(
         close, returns, n_days=n_days, n_simulations=n_sims,
         distribution=dist_str,
         df_t=t_info["df"] if t_info else None,
         volatility_model=vol_str,
-        garch_params=garch_info,
+        **model_kwargs,
     )
 
     dist_label = f"Student-t (df={t_info['df']:.1f})" if use_t else "Normal"
-    vol_label = "GARCH(1,1)" if use_garch else "Constant σ"
+    if use_hmm:
+        vol_label = f"HMM ({n_regimes} regime{'s' if n_regimes > 1 else ''})"
+    elif use_gmm:
+        vol_label = f"GMM ({n_regimes} regime{'s' if n_regimes > 1 else ''})"
+    elif use_garch:
+        vol_label = "GARCH(1,1)"
+    elif use_rvol:
+        vol_label = f"XGBoost Vol ({rvol_horizon}d)"
+    else:
+        vol_label = "Constant σ"
     model_label = f"{dist_label}, {vol_label}"
 
     final_prices = paths.iloc[-1]
@@ -134,6 +180,36 @@ if use_garch and garch_info is not None:
         f"β = {garch_info['beta']:.4f}, "
         f"persistence = {garch_info['persistence']:.4f} | "
         f"Long-run vol = {garch_info['long_run_vol']:.2%}"
+    )
+if use_hmm and hmm_info is not None:
+    current = predict_current_regime(hmm_info, returns)
+    regime_names = {1: {0: "Calm"}, 2: {0: "Calm", 1: "Crisis"},
+                    3: {0: "Calm", 1: "Moderate", 2: "Crisis"}}
+    names = regime_names.get(n_regimes, {})
+    parts = []
+    for i, p in enumerate(hmm_info["regime_params"]):
+        marker = " ← current" if i == current else ""
+        label = names.get(i, f"R{i}")
+        parts.append(f"{label}: μ={p['mu']:.4f}, σ={p['sigma']:.4f}{marker}")
+    st.info(f"**HMM ({n_regimes} regimes):** " + " | ".join(parts))
+if use_gmm and gmm_info is not None:
+    current = gmm_predict_current_regime(gmm_info, returns)
+    regime_names = {1: {0: "Calm"}, 2: {0: "Calm", 1: "Crisis"},
+                    3: {0: "Calm", 1: "Moderate", 2: "Crisis"}}
+    names = regime_names.get(n_regimes, {})
+    parts = []
+    for i, p in enumerate(gmm_info["regime_params"]):
+        marker = " ← current" if i == current else ""
+        label = names.get(i, f"R{i}")
+        parts.append(f"{label}: μ={p['mu']:.4f}, σ={p['sigma']:.4f}{marker}")
+    st.info(f"**GMM ({n_regimes} regimes):** " + " | ".join(parts))
+if use_rvol and rvol_info is not None:
+    ann_vol = rvol_info["predicted_vol"] * np.sqrt(252)
+    st.info(
+        f"**XGBoost Vol ({rvol_horizon}d):** "
+        f"Predicted σ = {rvol_info['predicted_vol']:.4f} (daily), "
+        f"{ann_vol:.2%} (annualized) | "
+        f"R² (train) = {rvol_info['r2_train']:.3f}"
     )
 
 col_win, col_lose = st.columns(2)
@@ -190,6 +266,21 @@ tab_price, tab_returns, tab_vol, tab_mc, tab_dist = st.tabs(
 with tab_price:
     fig_p, axes_p = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
     axes_p[0].plot(close.index, close.values, color="steelblue", linewidth=0.8)
+    regime_overlay = None
+    if use_hmm and hmm_info is not None and n_regimes > 1:
+        regime_overlay = hmm_info["regime_labels"]
+    elif use_gmm and gmm_info is not None and n_regimes > 1:
+        regime_overlay = gmm_info["regime_labels"]
+    if regime_overlay is not None:
+        regime_colors = {0: "#2ca02c", 1: "#ff7f0e", 2: "#d62728"}
+        dates = close.index[:len(regime_overlay)]
+        for r in range(n_regimes):
+            mask = regime_overlay == r
+            axes_p[0].fill_between(
+                dates, close.values[:len(regime_overlay)].min(), close.values[:len(regime_overlay)].max(),
+                where=mask, alpha=0.12, color=regime_colors.get(r, "gray"),
+                label=f"Regime {r}")
+        axes_p[0].legend(loc="upper left", fontsize=8)
     axes_p[0].set_title(f"{ticker} — Close Price")
     axes_p[0].set_ylabel("Price (USD)")
     dd = drawdown_series(close)

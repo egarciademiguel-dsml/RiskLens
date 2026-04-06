@@ -17,3 +17,7 @@
 | RL-013 | Fat-tailed Monte Carlo (Student-t) | Done | src/analytics/monte_carlo.py, app/, tests/ | t-distributed shocks, auto-fit df, UI toggle |
 | RL-014 | GARCH(1,1) volatility model       | Done | src/analytics/monte_carlo.py, app/, tests/ | Time-varying vol, arch library, UI toggle |
 | RL-015 | Test refactor + math reference + model comparison | Done | tests/, docs/, notebooks/ | Property-based tests, 61 total, math doc, comparison notebook |
+| RL-016 | HMM regime detection | Done | src/analytics/regime_hmm.py, vol_constant.py, vol_garch.py, tests/, app/ | hmmlearn, drift+vol per regime, n=1/2/3, model refactor |
+| RL-017 | GMM clustering + classifier regime detection | Done | src/analytics/regime_gmm.py, tests/, app/ | sklearn GMM+RF, feature engineering, n=1/2/3 |
+| RL-018 | Regime model comparison notebook | Done | notebooks/regime_comparison.ipynb | HMM vs GMM × 1/2/3 regimes, risk impact study |
+| RL-019 | Realized volatility regression (XGBoost) | Done | src/analytics/vol_rvol.py, tests/, app/ | 5/10/21d horizons, feature engineering, ML-predicted σ |

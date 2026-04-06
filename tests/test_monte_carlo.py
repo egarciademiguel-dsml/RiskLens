@@ -209,6 +209,12 @@ class TestInputValidation:
         with pytest.raises(ValueError):
             simulate_paths(close, returns, n_days=10, n_simulations=10, volatility_model="stochastic")
 
+    def test_hmm_accepted(self, market_data):
+        close, returns = market_data
+        paths = simulate_paths(close, returns, n_days=10, n_simulations=10,
+                               seed=0, volatility_model="hmm")
+        assert paths.shape == (10, 10)
+
 
 # ---------------------------------------------------------------------------
 # Student-t distribution

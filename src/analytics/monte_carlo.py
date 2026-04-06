@@ -2,10 +2,30 @@
 
 import numpy as np
 import pandas as pd
-from arch import arch_model
 from scipy.stats import t as t_dist
 
+from src.analytics.vol_constant import generate_log_returns as constant_log_returns
+from src.analytics.vol_garch import generate_log_returns as garch_log_returns
+from src.analytics.vol_garch import fit_garch
+from src.analytics.regime_hmm import generate_log_returns as hmm_log_returns
+from src.analytics.regime_hmm import fit_hmm, predict_current_regime, get_regime_params
+from src.analytics.regime_gmm import generate_log_returns as gmm_log_returns
+from src.analytics.regime_gmm import fit_gmm
+from src.analytics.regime_gmm import predict_current_regime as gmm_predict_current_regime
+from src.analytics.regime_gmm import get_regime_params as gmm_get_regime_params
+from src.analytics.vol_rvol import generate_log_returns as rvol_log_returns
+from src.analytics.vol_rvol import fit_rvol, predict_current_vol
+
 TRADING_DAYS_PER_YEAR = 252
+
+# Registry: model name → log-return generator
+_VOLATILITY_MODELS = {
+    "constant": constant_log_returns,
+    "garch": garch_log_returns,
+    "hmm": hmm_log_returns,
+    "gmm": gmm_log_returns,
+    "rvol": rvol_log_returns,
+}
 
 
 def simulate_paths(
@@ -17,7 +37,7 @@ def simulate_paths(
     distribution: str = "normal",
     df_t: float | None = None,
     volatility_model: str = "constant",
-    garch_params: dict | None = None,
+    **model_kwargs,
 ) -> pd.DataFrame:
     """Simulate forward price paths.
 
@@ -25,16 +45,15 @@ def simulate_paths(
 
     distribution: "normal" (Gaussian shocks) or "t" (Student-t, fat tails).
     df_t: degrees of freedom for Student-t. Auto-fitted from returns if None.
-    volatility_model: "constant" (flat sigma) or "garch" (GARCH(1,1) time-varying).
-    garch_params: pre-fitted GARCH params dict. Auto-fitted from returns if None.
+    volatility_model: key into the model registry ("constant", "garch", "hmm", ...).
+    **model_kwargs: passed directly to the chosen model's generate_log_returns().
     """
     if distribution not in ("normal", "t"):
         raise ValueError(f"Unknown distribution '{distribution}'. Use 'normal' or 't'.")
-    if volatility_model not in ("constant", "garch"):
-        raise ValueError(f"Unknown volatility_model '{volatility_model}'. Use 'constant' or 'garch'.")
+    if volatility_model not in _VOLATILITY_MODELS:
+        known = ", ".join(sorted(_VOLATILITY_MODELS))
+        raise ValueError(f"Unknown volatility_model '{volatility_model}'. Available: {known}.")
 
-    mu = returns.mean()
-    sigma = returns.std()
     last_price = close.iloc[-1]
 
     # Generate unit shocks (mean=0, var=1)
@@ -49,30 +68,11 @@ def simulate_paths(
             np.random.seed(seed)
         shocks = np.random.normal(0, 1, size=(n_days, n_simulations))
 
-    if volatility_model == "garch":
-        if garch_params is None:
-            garch_params = fit_garch(returns)
-        omega = garch_params["omega"]
-        alpha = garch_params["alpha"]
-        beta = garch_params["beta"]
-        prev_var = garch_params["last_variance"]
-        prev_resid = garch_params["last_resid"]
-
-        # Day-by-day variance simulation
-        log_returns = np.empty_like(shocks)
-        for t in range(n_days):
-            curr_var = omega + alpha * prev_resid**2 + beta * prev_var
-            sigma_t = np.sqrt(curr_var)
-            drift_t = mu - 0.5 * curr_var
-            log_returns[t] = drift_t + sigma_t * shocks[t]
-            prev_resid = sigma_t * shocks[t]  # realized shock for next step
-            prev_var = curr_var
-    else:
-        drift = mu - 0.5 * sigma**2
-        log_returns = drift + sigma * shocks
+    # Delegate to the chosen model
+    model_fn = _VOLATILITY_MODELS[volatility_model]
+    log_returns = model_fn(shocks, returns, seed=seed, **model_kwargs)
 
     paths = last_price * np.exp(np.cumsum(log_returns, axis=0))
-
     return pd.DataFrame(paths)
 
 
@@ -98,36 +98,6 @@ def fit_t_distribution(returns: pd.Series) -> dict:
         "scale": float(scale_fit),
         "n_observations": len(clean),
         "tail_description": tail_desc,
-    }
-
-
-def fit_garch(returns: pd.Series) -> dict:
-    """Fit GARCH(1,1) to historical returns. Returns params for simulation."""
-    clean = (returns.dropna() * 100)  # arch expects percentage returns
-    model = arch_model(clean, vol="Garch", p=1, q=1, mean="Constant", dist="normal")
-    res = model.fit(disp="off")
-
-    omega = res.params["omega"]
-    alpha = res.params["alpha[1]"]
-    beta = res.params["beta[1]"]
-
-    # Long-run variance (annualized vol from it)
-    long_run_var = omega / (1 - alpha - beta)
-    long_run_vol = np.sqrt(long_run_var * TRADING_DAYS_PER_YEAR) / 100  # back to decimal
-
-    # Last conditional variance and residual for simulation seeding
-    last_var = float(res.conditional_volatility.iloc[-1] ** 2)
-    last_resid = float(clean.iloc[-1] - res.params["mu"])
-
-    # Convert back to decimal scale for simulation
-    return {
-        "omega": omega / 1e4,
-        "alpha": float(alpha),
-        "beta": float(beta),
-        "long_run_vol": float(long_run_vol),
-        "last_variance": last_var / 1e4,
-        "last_resid": last_resid / 100,
-        "persistence": float(alpha + beta),
     }
 
 
