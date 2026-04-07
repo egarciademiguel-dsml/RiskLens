@@ -5,7 +5,7 @@ import pandas as pd
 from scipy.stats import chi2
 
 from src.analytics.monte_carlo import (
-    simulate_paths, compute_var, fit_garch, fit_hmm, fit_gmm, fit_rvol,
+    simulate_paths, compute_var, fit_garch, fit_hmm, fit_gmm,
 )
 
 
@@ -27,10 +27,6 @@ def hmm_fit(returns_window, seed, n_regimes=2):
 
 def gmm_fit(returns_window, seed, n_regimes=2):
     return {"volatility_model": "gmm", "gmm_params": fit_gmm(returns_window, n_regimes, seed)}
-
-
-def rvol_fit(returns_window, seed, horizon=21):
-    return {"volatility_model": "rvol", "rvol_params": fit_rvol(returns_window, horizon, seed)}
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +60,7 @@ def backtest_var(
     DataFrame with columns: actual_return, predicted_var, breach.
     """
     results = []
+    n_skipped = 0
     test_indices = range(train_window, len(returns) - 1, step)
 
     for t in test_indices:
@@ -73,6 +70,7 @@ def backtest_var(
         try:
             model_kwargs = fit_fn(returns_window, seed)
         except Exception:
+            n_skipped += 1
             continue
 
         try:
@@ -85,6 +83,7 @@ def backtest_var(
             initial_price = close_window.iloc[-1]
             var = compute_var(final_prices, initial_price, confidence)
         except Exception:
+            n_skipped += 1
             continue
 
         actual = returns.iloc[t + 1]
@@ -98,6 +97,7 @@ def backtest_var(
     df = pd.DataFrame(results)
     if len(df) > 0:
         df = df.set_index("date")
+    df.attrs["n_skipped"] = n_skipped
     return df
 
 
@@ -213,6 +213,79 @@ def christoffersen_test(breaches: np.ndarray) -> dict:
 # Summary
 # ---------------------------------------------------------------------------
 
+def compare_models(
+    close: pd.Series,
+    returns: pd.Series,
+    model_configs: dict,
+    train_window: int = 252,
+    confidence: float = 0.95,
+    n_simulations: int = 2_000,
+    seed: int = 42,
+    step: int = 5,
+) -> dict:
+    """Backtest all models and return dual ranking.
+
+    Parameters
+    ----------
+    close, returns : historical price / return series.
+    model_configs : dict mapping model name → fit_fn callable.
+    train_window, confidence, n_simulations, seed, step : backtest parameters.
+
+    Returns
+    -------
+    dict with:
+      - "results": DataFrame with per-model stats, calibration_rank, conservative_rank
+      - "best_calibrated": name of the best-calibrated model
+      - "most_conservative": name of the most risk-conservative model
+    """
+    rows = []
+    for name, fit_fn in model_configs.items():
+        bt = backtest_var(
+            close, returns, fit_fn=fit_fn, train_window=train_window,
+            confidence=confidence, n_simulations=n_simulations, seed=seed, step=step,
+        )
+        summary = backtest_summary(bt, confidence)
+        mean_var = float(bt["predicted_var"].mean()) if len(bt) > 0 else 0.0
+        rows.append({
+            "model": name,
+            "n_obs": summary["n_obs"],
+            "n_breaches": summary["n_breaches"],
+            "breach_rate": summary["breach_rate"],
+            "expected_rate": summary["expected_rate"],
+            "kupiec_p": summary["kupiec"]["p_value"],
+            "kupiec_pass": summary["kupiec"]["pass"],
+            "christoffersen_p": summary["christoffersen"]["p_value"],
+            "christoffersen_pass": summary["christoffersen"]["pass"],
+            "mean_predicted_var": mean_var,
+        })
+
+    df = pd.DataFrame(rows).set_index("model")
+    df["breach_error"] = (df["breach_rate"] - df["expected_rate"]).abs()
+
+    # Calibration rank: lowest breach_error wins, tiebreak by highest kupiec_p
+    df["calibration_rank"] = (
+        df[["breach_error", "kupiec_p"]]
+        .apply(lambda r: (r["breach_error"], -r["kupiec_p"]), axis=1)
+        .rank(method="min").astype(int)
+    )
+
+    # Conservative rank: lowest breach_rate wins, tiebreak by deepest mean_predicted_var
+    df["conservative_rank"] = (
+        df[["breach_rate", "mean_predicted_var"]]
+        .apply(lambda r: (r["breach_rate"], r["mean_predicted_var"]), axis=1)
+        .rank(method="min").astype(int)
+    )
+
+    best_cal = df["calibration_rank"].idxmin()
+    most_cons = df["conservative_rank"].idxmin()
+
+    return {
+        "results": df,
+        "best_calibrated": best_cal,
+        "most_conservative": most_cons,
+    }
+
+
 def backtest_summary(results: pd.DataFrame, confidence: float = 0.95) -> dict:
     """Compute full backtest summary from backtest_var output."""
     n_obs = len(results)
@@ -226,6 +299,7 @@ def backtest_summary(results: pd.DataFrame, confidence: float = 0.95) -> dict:
         "n_breaches": n_breaches,
         "breach_rate": n_breaches / n_obs if n_obs > 0 else 0.0,
         "expected_rate": 1 - confidence,
+        "n_skipped": results.attrs.get("n_skipped", 0),
         "kupiec": kupiec,
         "christoffersen": christoffersen,
     }

@@ -8,3 +8,6 @@ DATA_PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
 # Default fetch window
 DEFAULT_PERIOD_YEARS = 5
+
+# Trading calendar
+TRADING_DAYS_PER_YEAR = 252

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from arch import arch_model
 
-TRADING_DAYS_PER_YEAR = 252
+from src.config import TRADING_DAYS_PER_YEAR
 
 
 def fit_garch(returns: pd.Series) -> dict:

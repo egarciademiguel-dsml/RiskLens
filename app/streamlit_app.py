@@ -34,8 +34,6 @@ from src.analytics.monte_carlo import (
     predict_current_regime,
     fit_gmm,
     gmm_predict_current_regime,
-    fit_rvol,
-    predict_current_vol,
 )
 from src.analytics.backtesting import (
     backtest_var,
@@ -44,8 +42,9 @@ from src.analytics.backtesting import (
     garch_fit,
     hmm_fit,
     gmm_fit,
-    rvol_fit,
 )
+from src.analytics.evt import evt_summary, normal_var, normal_cvar
+from src.analytics.xgb_var import fit_quantile_model, predict_var
 
 sns.set_theme(style="whitegrid")
 
@@ -73,19 +72,16 @@ with st.sidebar:
     use_t = dist_choice.startswith("Student-t")
     vol_choice = st.radio(
         "Volatility Model",
-        options=["Constant", "GARCH(1,1)", "HMM Regimes", "GMM Regimes", "ML Volatility (XGBoost)"],
+        options=["Constant", "GARCH(1,1)", "HMM Regimes", "GMM Regimes"],
         index=0,
-        help="GARCH captures volatility clustering. HMM/GMM detect market regimes. ML Vol uses XGBoost to predict forward realized volatility.",
+        help="GARCH captures volatility clustering. HMM/GMM detect market regimes.",
     )
     use_garch = vol_choice == "GARCH(1,1)"
     use_hmm = vol_choice == "HMM Regimes"
     use_gmm = vol_choice == "GMM Regimes"
-    use_rvol = vol_choice == "ML Volatility (XGBoost)"
 
     if use_hmm or use_gmm:
         n_regimes = st.select_slider("Number of regimes", options=[1, 2, 3], value=2)
-    if use_rvol:
-        rvol_horizon = st.select_slider("Volatility horizon (days)", options=[5, 10, 21], value=21)
     n_days = st.slider("Forecast horizon (days)", min_value=30, max_value=504, value=252, step=1)
     n_sims = st.select_slider("Simulations", options=[1000, 5000, 10000, 25000, 50000], value=10000)
     confidence = st.select_slider("Confidence level", options=[0.90, 0.95, 0.99], value=0.95)
@@ -131,8 +127,6 @@ with st.spinner("Running Monte Carlo simulation..."):
         vol_str = "gmm"
     elif use_garch:
         vol_str = "garch"
-    elif use_rvol:
-        vol_str = "rvol"
     else:
         vol_str = "constant"
 
@@ -140,8 +134,6 @@ with st.spinner("Running Monte Carlo simulation..."):
     garch_info = fit_garch(returns) if use_garch else None
     hmm_info = fit_hmm(returns, n_regimes=n_regimes) if use_hmm else None
     gmm_info = fit_gmm(returns, n_regimes=n_regimes) if use_gmm else None
-    rvol_info = fit_rvol(returns, horizon=rvol_horizon) if use_rvol else None
-
     model_kwargs = {}
     if use_garch:
         model_kwargs["garch_params"] = garch_info
@@ -149,8 +141,6 @@ with st.spinner("Running Monte Carlo simulation..."):
         model_kwargs["hmm_params"] = hmm_info
     if use_gmm:
         model_kwargs["gmm_params"] = gmm_info
-    if use_rvol:
-        model_kwargs["rvol_params"] = rvol_info
 
     paths = simulate_paths(
         close, returns, n_days=n_days, n_simulations=n_sims,
@@ -167,8 +157,6 @@ with st.spinner("Running Monte Carlo simulation..."):
         vol_label = f"GMM ({n_regimes} regime{'s' if n_regimes > 1 else ''})"
     elif use_garch:
         vol_label = "GARCH(1,1)"
-    elif use_rvol:
-        vol_label = f"XGBoost Vol ({rvol_horizon}d)"
     else:
         vol_label = "Constant σ"
     model_label = f"{dist_label}, {vol_label}"
@@ -212,15 +200,6 @@ if use_gmm and gmm_info is not None:
         label = names.get(i, f"R{i}")
         parts.append(f"{label}: μ={p['mu']:.4f}, σ={p['sigma']:.4f}{marker}")
     st.info(f"**GMM ({n_regimes} regimes):** " + " | ".join(parts))
-if use_rvol and rvol_info is not None:
-    ann_vol = rvol_info["predicted_vol"] * np.sqrt(252)
-    st.info(
-        f"**XGBoost Vol ({rvol_horizon}d):** "
-        f"Predicted σ = {rvol_info['predicted_vol']:.4f} (daily), "
-        f"{ann_vol:.2%} (annualized) | "
-        f"R² (train) = {rvol_info['r2_train']:.3f}"
-    )
-
 col_win, col_lose = st.columns(2)
 col_win.metric("Probability of Gain", f"{summary['prob_gain']:.1%}")
 col_lose.metric("Probability of Loss", f"{summary['prob_loss']:.1%}")
@@ -268,8 +247,8 @@ st.divider()
 # --- Charts in tabs ---
 
 st.subheader("Charts")
-tab_price, tab_returns, tab_vol, tab_mc, tab_dist, tab_bt = st.tabs(
-    ["Price & Drawdown", "Returns Distribution", "Rolling Volatility", "Monte Carlo Paths", "Final Price Distribution", "VaR Backtest"]
+tab_price, tab_returns, tab_vol, tab_mc, tab_dist, tab_tail, tab_bt = st.tabs(
+    ["Price & Drawdown", "Returns Distribution", "Rolling Volatility", "Monte Carlo Paths", "Final Price Distribution", "Tail Risk (EVT & ML)", "VaR Backtest"]
 )
 
 with tab_price:
@@ -352,6 +331,59 @@ with tab_dist:
     plt.tight_layout()
     st.pyplot(fig_d)
 
+with tab_tail:
+    st.markdown(
+        "**Three complementary VaR approaches:** Normal (parametric), "
+        "EVT/GPD (tail-focused), and XGBoost quantile regression (nonparametric ML)."
+    )
+
+    with st.spinner("Fitting EVT and XGBoost models..."):
+        # EVT
+        evt = evt_summary(returns, confidence=confidence)
+        n_var = normal_var(returns, confidence=confidence)
+        n_cvar = normal_cvar(returns, confidence=confidence)
+
+        # XGBoost quantile regression
+        alpha = 1 - confidence  # e.g. 0.95 confidence → 0.05 quantile
+        xgb_result = fit_quantile_model(returns, quantile=alpha, seed=42)
+        xgb_var_value = xgb_result["predicted_var"]
+
+    # --- Comparison table ---
+    st.subheader(f"VaR Comparison ({confidence:.0%} Confidence)")
+    comparison = pd.DataFrame({
+        "Method": ["Normal (Gaussian)", "EVT (GPD/POT)", "XGBoost Quantile"],
+        f"VaR ({confidence:.0%})": [f"{n_var:.4f}", f"{evt['var']:.4f}", f"{xgb_var_value:.4f}"],
+        "Type": ["Parametric", "Semi-parametric (tail)", "Nonparametric (ML)"],
+    })
+    st.dataframe(comparison, use_container_width=True, hide_index=True)
+
+    # --- EVT details ---
+    st.subheader("EVT — Extreme Value Theory (GPD)")
+    evt_c1, evt_c2, evt_c3 = st.columns(3)
+    evt_c1.metric("EVT VaR", f"{evt['var']:.4f}")
+    evt_c2.metric("EVT CVaR (Expected Shortfall)", f"{evt['cvar']:.4f}")
+    evt_c3.metric("Tail Type", evt["tail_type"])
+
+    gpd_c1, gpd_c2, gpd_c3 = st.columns(3)
+    gpd_c1.metric("Shape (ξ)", f"{evt['shape']:.4f}")
+    gpd_c2.metric("Scale (β)", f"{evt['scale']:.4f}")
+    gpd_c3.metric("Threshold (u)", f"{evt['threshold']:.4f}")
+
+    st.caption(
+        f"GPD fitted to {evt['n_exceedances']} exceedances above the "
+        f"{evt['threshold_quantile']:.0%} quantile of losses ({evt['n_total']} total observations). "
+        f"Normal VaR: {n_var:.4f} | Normal CVaR: {n_cvar:.4f}"
+    )
+
+    # --- XGB details ---
+    st.subheader("XGBoost — Conditional Quantile Regression")
+    st.metric(f"Predicted Next-Day VaR ({confidence:.0%})", f"{xgb_var_value:.4f}")
+    st.caption(
+        f"XGBoost predicts the {alpha:.0%} quantile of next-day returns using rolling features "
+        f"(volatility, skewness, kurtosis, momentum). No distributional assumption — "
+        f"a nonparametric audit of the parametric models above."
+    )
+
 with tab_bt:
     st.markdown("Rolling-window VaR backtest — checks if predicted VaR is consistent with observed losses.")
     bt_col1, bt_col2 = st.columns(2)
@@ -369,8 +401,6 @@ with tab_bt:
             fit_fn = partial(gmm_fit, n_regimes=n_regimes)
         elif use_garch:
             fit_fn = garch_fit
-        elif use_rvol:
-            fit_fn = partial(rvol_fit, horizon=rvol_horizon)
         else:
             fit_fn = constant_fit
 

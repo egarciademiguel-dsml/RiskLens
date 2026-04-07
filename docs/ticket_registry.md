@@ -23,3 +23,6 @@
 | RL-019 | Realized volatility regression (XGBoost) | Done | src/analytics/vol_rvol.py, tests/, app/ | 5/10/21d horizons, feature engineering, ML-predicted σ |
 | RL-020 | Notebook consolidation (3→2) | Done | notebooks/ | Walkthrough + Deep Dive, deleted 3 stale notebooks |
 | RL-021 | VaR Backtesting | Done | src/analytics/backtesting.py, tests/, app/, notebooks/, docs/ | Kupiec + Christoffersen tests, rolling-window engine, Streamlit tab |
+| RL-022 | v0.2 wrap: vol cutoff, model comparison, cleanup | Superseded | vol_rvol, backtesting, monte_carlo, risk_metrics, vol_garch, config, README | XGB horizon cutoff, compare_models(), RNG fix, constant consolidation, dead code removal, README rewrite |
+| RL-023 | EVT tail risk + XGB model removal | Done | evt.py (new), vol_rvol.py (deleted), monte_carlo, backtesting, streamlit_app, tests | GPD/POT tail risk, removed broken XGB vol model, 22 new tests |
+| RL-024 | XGB conditional quantile regression | Done | xgb_var.py (new), tests, notebooks | Nonparametric VaR via quantile regression, 3-way comparison (Normal/EVT/XGB), notebook updates |

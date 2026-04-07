@@ -13,10 +13,7 @@ from src.analytics.regime_gmm import generate_log_returns as gmm_log_returns
 from src.analytics.regime_gmm import fit_gmm
 from src.analytics.regime_gmm import predict_current_regime as gmm_predict_current_regime
 from src.analytics.regime_gmm import get_regime_params as gmm_get_regime_params
-from src.analytics.vol_rvol import generate_log_returns as rvol_log_returns
-from src.analytics.vol_rvol import fit_rvol, predict_current_vol
-
-TRADING_DAYS_PER_YEAR = 252
+from src.config import TRADING_DAYS_PER_YEAR
 
 # Registry: model name → log-return generator
 _VOLATILITY_MODELS = {
@@ -24,7 +21,6 @@ _VOLATILITY_MODELS = {
     "garch": garch_log_returns,
     "hmm": hmm_log_returns,
     "gmm": gmm_log_returns,
-    "rvol": rvol_log_returns,
 }
 
 
@@ -64,9 +60,8 @@ def simulate_paths(
         raw = t_dist.rvs(df=df_t, size=(n_days, n_simulations), random_state=seed)
         shocks = raw / np.sqrt(df_t / (df_t - 2))
     else:
-        if seed is not None:
-            np.random.seed(seed)
-        shocks = np.random.normal(0, 1, size=(n_days, n_simulations))
+        rng = np.random.RandomState(seed)
+        shocks = rng.normal(0, 1, size=(n_days, n_simulations))
 
     # Delegate to the chosen model
     model_fn = _VOLATILITY_MODELS[volatility_model]

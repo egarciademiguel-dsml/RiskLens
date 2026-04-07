@@ -9,6 +9,7 @@ from src.analytics.backtesting import (
     christoffersen_test,
     backtest_var,
     backtest_summary,
+    compare_models,
     constant_fit,
     garch_fit,
 )
@@ -195,3 +196,67 @@ class TestBacktestSummary:
         results = backtest_var(close, returns, train_window=252, step=10, n_simulations=500)
         summary = backtest_summary(results, confidence=0.99)
         assert summary["expected_rate"] == pytest.approx(0.01)
+
+
+# ---------------------------------------------------------------------------
+# compare_models
+# ---------------------------------------------------------------------------
+
+class TestCompareModels:
+    def test_returns_expected_keys(self):
+        close, returns = _make_synthetic_data()
+        result = compare_models(
+            close, returns,
+            model_configs={"Constant": constant_fit},
+            train_window=252, step=20, n_simulations=500,
+        )
+        assert "results" in result
+        assert "best_calibrated" in result
+        assert "most_conservative" in result
+
+    def test_results_columns(self):
+        close, returns = _make_synthetic_data()
+        result = compare_models(
+            close, returns,
+            model_configs={"Constant": constant_fit},
+            train_window=252, step=20, n_simulations=500,
+        )
+        df = result["results"]
+        expected_cols = {
+            "n_obs", "n_breaches", "breach_rate", "expected_rate",
+            "kupiec_p", "kupiec_pass", "christoffersen_p", "christoffersen_pass",
+            "mean_predicted_var", "breach_error", "calibration_rank", "conservative_rank",
+        }
+        assert expected_cols.issubset(set(df.columns))
+
+    def test_single_model_both_picks_same(self):
+        close, returns = _make_synthetic_data()
+        result = compare_models(
+            close, returns,
+            model_configs={"Constant": constant_fit},
+            train_window=252, step=20, n_simulations=500,
+        )
+        assert result["best_calibrated"] == "Constant"
+        assert result["most_conservative"] == "Constant"
+
+    def test_calibration_rank_lowest_breach_error(self):
+        close, returns = _make_synthetic_data()
+        result = compare_models(
+            close, returns,
+            model_configs={"Constant": constant_fit, "GARCH": garch_fit},
+            train_window=252, step=20, n_simulations=500,
+        )
+        df = result["results"]
+        rank1 = df[df["calibration_rank"] == 1]
+        assert rank1["breach_error"].values[0] <= df["breach_error"].max()
+
+    def test_conservative_rank_lowest_breach_rate(self):
+        close, returns = _make_synthetic_data()
+        result = compare_models(
+            close, returns,
+            model_configs={"Constant": constant_fit, "GARCH": garch_fit},
+            train_window=252, step=20, n_simulations=500,
+        )
+        df = result["results"]
+        rank1 = df[df["conservative_rank"] == 1]
+        assert rank1["breach_rate"].values[0] <= df["breach_rate"].max()

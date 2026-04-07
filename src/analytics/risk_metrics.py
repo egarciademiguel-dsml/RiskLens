@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-TRADING_DAYS_PER_YEAR = 252
+from src.config import TRADING_DAYS_PER_YEAR
 
 
 def annualized_volatility(returns: pd.Series) -> float:
