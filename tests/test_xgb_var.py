@@ -7,6 +7,9 @@ from src.analytics.xgb_var import (
     fit_quantile_model,
     predict_var,
     backtest_quantile_var,
+    pinball_loss,
+    tune_hyperparameters,
+    _PARAM_GRID,
 )
 
 
@@ -86,6 +89,74 @@ class TestFitQuantileModel:
         r1 = fit_quantile_model(market_data, quantile=0.05, seed=42)
         r2 = fit_quantile_model(market_data, quantile=0.05, seed=42)
         assert r1["predicted_var"] == r2["predicted_var"]
+
+
+# ---------------------------------------------------------------------------
+# Hyperparameter tuning
+# ---------------------------------------------------------------------------
+
+class TestPinballLoss:
+
+    def test_perfect_prediction(self):
+        y = np.array([1.0, 2.0, 3.0])
+        assert pinball_loss(y, y, 0.05) == pytest.approx(0.0)
+
+    def test_positive_for_non_perfect(self):
+        y_true = np.array([1.0, 2.0, 3.0])
+        y_pred = np.array([1.5, 2.5, 3.5])
+        # Predictions above actuals → residual < 0 → penalised by (quantile - 1)
+        loss = pinball_loss(y_true, y_pred, 0.05)
+        assert loss > 0
+
+
+class TestTuneHyperparameters:
+
+    def test_returns_dict(self, market_data):
+        features = engineer_features(market_data)
+        feature_cols = [c for c in features.columns if c != "returns"]
+        target = market_data.shift(-1)
+        aligned = features.copy()
+        aligned["target"] = target
+        aligned = aligned.dropna()
+        X = aligned[feature_cols].values
+        y = aligned["target"].values
+
+        result = tune_hyperparameters(X, y, quantile=0.05)
+        assert isinstance(result, dict)
+        assert "max_depth" in result
+        assert "learning_rate" in result
+        assert "n_estimators" in result
+
+    def test_params_in_grid(self, market_data):
+        features = engineer_features(market_data)
+        feature_cols = [c for c in features.columns if c != "returns"]
+        target = market_data.shift(-1)
+        aligned = features.copy()
+        aligned["target"] = target
+        aligned = aligned.dropna()
+        X = aligned[feature_cols].values
+        y = aligned["target"].values
+
+        result = tune_hyperparameters(X, y, quantile=0.05)
+        assert result["max_depth"] in _PARAM_GRID["max_depth"]
+        assert result["learning_rate"] in _PARAM_GRID["learning_rate"]
+        assert result["n_estimators"] in _PARAM_GRID["n_estimators"]
+
+
+class TestFitQuantileModelTuned:
+
+    def test_tune_returns_best_params(self, market_data):
+        result = fit_quantile_model(market_data, quantile=0.05, tune=True)
+        assert "best_params" in result
+        assert "max_depth" in result["best_params"]
+
+    def test_tune_still_predicts(self, market_data):
+        result = fit_quantile_model(market_data, quantile=0.05, tune=True)
+        assert isinstance(result["predicted_var"], float)
+
+    def test_no_tune_no_best_params(self, market_data):
+        result = fit_quantile_model(market_data, quantile=0.05, tune=False)
+        assert "best_params" not in result
 
 
 # ---------------------------------------------------------------------------

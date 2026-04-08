@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import chi2
 
+from src.analytics.evt import fit_gpd, evt_var
 from src.analytics.monte_carlo import (
     simulate_paths, compute_var, fit_garch, fit_hmm, fit_gmm,
 )
@@ -92,6 +93,51 @@ def backtest_var(
             "actual_return": actual,
             "predicted_var": var,
             "breach": actual < var,
+        })
+
+    df = pd.DataFrame(results)
+    if len(df) > 0:
+        df = df.set_index("date")
+    df.attrs["n_skipped"] = n_skipped
+    return df
+
+
+# ---------------------------------------------------------------------------
+# EVT backtest
+# ---------------------------------------------------------------------------
+
+def backtest_evt_var(
+    returns: pd.Series,
+    confidence: float = 0.95,
+    threshold_quantile: float = 0.95,
+    train_window: int = 252,
+    step: int = 1,
+) -> pd.DataFrame:
+    """Expanding-window walk-forward backtest for EVT (GPD/POT) VaR.
+
+    At each step: fit GPD on [0:t+1], compute EVT VaR, check against returns[t+1].
+    Returns DataFrame compatible with backtest_summary().
+    """
+    results = []
+    n_skipped = 0
+    test_indices = range(train_window, len(returns) - 1, step)
+
+    for t in test_indices:
+        returns_window = returns.iloc[:t + 1]
+
+        try:
+            gpd_params = fit_gpd(returns_window, threshold_quantile)
+            predicted = evt_var(gpd_params, confidence)
+        except Exception:
+            n_skipped += 1
+            continue
+
+        actual = returns.iloc[t + 1]
+        results.append({
+            "date": returns.index[t + 1],
+            "actual_return": actual,
+            "predicted_var": predicted,
+            "breach": actual < predicted,
         })
 
     df = pd.DataFrame(results)

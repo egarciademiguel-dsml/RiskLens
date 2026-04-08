@@ -26,3 +26,4 @@
 | RL-022 | v0.2 wrap: vol cutoff, model comparison, cleanup | Superseded | vol_rvol, backtesting, monte_carlo, risk_metrics, vol_garch, config, README | XGB horizon cutoff, compare_models(), RNG fix, constant consolidation, dead code removal, README rewrite |
 | RL-023 | EVT tail risk + XGB model removal | Done | evt.py (new), vol_rvol.py (deleted), monte_carlo, backtesting, streamlit_app, tests | GPD/POT tail risk, removed broken XGB vol model, 22 new tests |
 | RL-024 | XGB conditional quantile regression | Done | xgb_var.py (new), tests, notebooks | Nonparametric VaR via quantile regression, 3-way comparison (Normal/EVT/XGB), notebook updates |
+| RL-025 | XGBoost temporal CV + EVT backtesting | Done | xgb_var, backtesting, streamlit_app, tests | TimeSeriesSplit CV for XGB hyperparams, EVT walk-forward backtest, 14 new tests |

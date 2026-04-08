@@ -37,6 +37,7 @@ from src.analytics.monte_carlo import (
 )
 from src.analytics.backtesting import (
     backtest_var,
+    backtest_evt_var,
     backtest_summary,
     constant_fit,
     garch_fit,
@@ -343,9 +344,9 @@ with tab_tail:
         n_var = normal_var(returns, confidence=confidence)
         n_cvar = normal_cvar(returns, confidence=confidence)
 
-        # XGBoost quantile regression
+        # XGBoost quantile regression (with temporal CV tuning)
         alpha = 1 - confidence  # e.g. 0.95 confidence → 0.05 quantile
-        xgb_result = fit_quantile_model(returns, quantile=alpha, seed=42)
+        xgb_result = fit_quantile_model(returns, quantile=alpha, seed=42, tune=True)
         xgb_var_value = xgb_result["predicted_var"]
 
     # --- Comparison table ---
@@ -378,11 +379,20 @@ with tab_tail:
     # --- XGB details ---
     st.subheader("XGBoost — Conditional Quantile Regression")
     st.metric(f"Predicted Next-Day VaR ({confidence:.0%})", f"{xgb_var_value:.4f}")
-    st.caption(
-        f"XGBoost predicts the {alpha:.0%} quantile of next-day returns using rolling features "
-        f"(volatility, skewness, kurtosis, momentum). No distributional assumption — "
-        f"a nonparametric audit of the parametric models above."
-    )
+    if "best_params" in xgb_result:
+        bp = xgb_result["best_params"]
+        st.caption(
+            f"Tuned via TimeSeriesSplit CV — max_depth={bp['max_depth']}, "
+            f"lr={bp['learning_rate']}, n_estimators={bp['n_estimators']}. "
+            f"Predicts the {alpha:.0%} quantile of next-day returns using rolling features "
+            f"(volatility, skewness, kurtosis, momentum)."
+        )
+    else:
+        st.caption(
+            f"XGBoost predicts the {alpha:.0%} quantile of next-day returns using rolling features "
+            f"(volatility, skewness, kurtosis, momentum). No distributional assumption — "
+            f"a nonparametric audit of the parametric models above."
+        )
 
 with tab_bt:
     st.markdown("Rolling-window VaR backtest — checks if predicted VaR is consistent with observed losses.")
@@ -447,6 +457,49 @@ with tab_bt:
             ax_bt.legend(fontsize=8)
             plt.tight_layout()
             st.pyplot(fig_bt)
+
+    # --- EVT backtest ---
+    st.markdown("---")
+    st.markdown("**EVT (GPD/POT) Backtest** — expanding-window walk-forward validation for Extreme Value Theory VaR.")
+    if st.button("Run EVT Backtest", key="evt_bt_run"):
+        with st.spinner("Running EVT backtest..."):
+            evt_bt = backtest_evt_var(
+                returns, confidence=confidence,
+                train_window=bt_window, step=bt_step,
+            )
+
+        if len(evt_bt) == 0:
+            st.warning("Not enough data for EVT backtest with this window size.")
+        else:
+            evt_sum = backtest_summary(evt_bt, confidence=confidence)
+
+            ec1, ec2, ec3, ec4 = st.columns(4)
+            ec1.metric("Observations", evt_sum["n_obs"])
+            ec2.metric("Breaches", f"{evt_sum['n_breaches']} ({evt_sum['breach_rate']:.1%})")
+            ec3.metric("Kupiec p-value", f"{evt_sum['kupiec']['p_value']:.3f}")
+            ec4.metric("Christoffersen p-value", f"{evt_sum['christoffersen']['p_value']:.3f}")
+
+            ek_status = "PASS" if evt_sum["kupiec"]["pass"] else "FAIL"
+            ec_status = "PASS" if evt_sum["christoffersen"]["pass"] else "FAIL"
+            st.markdown(
+                f"**Expected breach rate:** {evt_sum['expected_rate']:.1%} | "
+                f"**Observed:** {evt_sum['breach_rate']:.1%} | "
+                f"**Kupiec:** {ek_status} | **Christoffersen:** {ec_status}"
+            )
+
+            fig_evt_bt, ax_evt_bt = plt.subplots(figsize=(12, 5))
+            ax_evt_bt.plot(evt_bt.index, evt_bt["actual_return"], color="steelblue", linewidth=0.6, alpha=0.7, label="Actual return")
+            ax_evt_bt.plot(evt_bt.index, evt_bt["predicted_var"], color="darkgreen", linewidth=1, linestyle="--", label=f"EVT VaR {confidence:.0%}")
+            evt_breaches = evt_bt[evt_bt["breach"]]
+            if len(evt_breaches) > 0:
+                ax_evt_bt.scatter(evt_breaches.index, evt_breaches["actual_return"], color="red", s=20, zorder=5, label=f"Breaches ({len(evt_breaches)})")
+            ax_evt_bt.axhline(0, color="gray", linewidth=0.5)
+            ax_evt_bt.set_title(f"{ticker} — EVT VaR Backtest ({confidence:.0%})")
+            ax_evt_bt.set_xlabel("Date")
+            ax_evt_bt.set_ylabel("Daily Return")
+            ax_evt_bt.legend(fontsize=8)
+            plt.tight_layout()
+            st.pyplot(fig_evt_bt)
 
 st.divider()
 

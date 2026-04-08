@@ -8,6 +8,7 @@ from src.analytics.backtesting import (
     kupiec_test,
     christoffersen_test,
     backtest_var,
+    backtest_evt_var,
     backtest_summary,
     compare_models,
     constant_fit,
@@ -260,3 +261,45 @@ class TestCompareModels:
         df = result["results"]
         rank1 = df[df["conservative_rank"] == 1]
         assert rank1["breach_rate"].values[0] <= df["breach_rate"].max()
+
+
+# ---------------------------------------------------------------------------
+# EVT backtest
+# ---------------------------------------------------------------------------
+
+class TestBacktestEvtVar:
+
+    def test_returns_dataframe(self):
+        _, returns = _make_synthetic_data()
+        bt = backtest_evt_var(returns, confidence=0.95, train_window=252, step=10)
+        assert isinstance(bt, pd.DataFrame)
+
+    def test_expected_columns(self):
+        _, returns = _make_synthetic_data()
+        bt = backtest_evt_var(returns, confidence=0.95, train_window=252, step=10)
+        assert set(bt.columns) == {"actual_return", "predicted_var", "breach"}
+
+    def test_breach_is_boolean(self):
+        _, returns = _make_synthetic_data()
+        bt = backtest_evt_var(returns, confidence=0.95, train_window=252, step=10)
+        assert bt["breach"].dtype == bool
+
+    def test_breach_consistency(self):
+        _, returns = _make_synthetic_data()
+        bt = backtest_evt_var(returns, confidence=0.95, train_window=252, step=10)
+        expected = bt["actual_return"] < bt["predicted_var"]
+        pd.testing.assert_series_equal(bt["breach"], expected, check_names=False)
+
+    def test_compatible_with_backtest_summary(self):
+        _, returns = _make_synthetic_data()
+        bt = backtest_evt_var(returns, confidence=0.95, train_window=252, step=10)
+        summary = backtest_summary(bt, confidence=0.95)
+        assert "kupiec" in summary
+        assert "christoffersen" in summary
+        assert summary["n_obs"] == len(bt)
+
+    def test_var_is_negative(self):
+        """EVT VaR should be negative (a loss threshold)."""
+        _, returns = _make_synthetic_data()
+        bt = backtest_evt_var(returns, confidence=0.95, train_window=252, step=10)
+        assert (bt["predicted_var"] < 0).all()
