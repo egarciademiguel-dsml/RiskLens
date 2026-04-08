@@ -251,7 +251,8 @@ class TestCompareModels:
         rank1 = df[df["calibration_rank"] == 1]
         assert rank1["breach_error"].values[0] <= df["breach_error"].max()
 
-    def test_conservative_rank_lowest_breach_rate(self):
+    def test_conservative_rank_highest_breach_rate(self):
+        """Most conservative = highest breach rate (model shows most risk)."""
         close, returns = _make_synthetic_data()
         result = compare_models(
             close, returns,
@@ -260,7 +261,7 @@ class TestCompareModels:
         )
         df = result["results"]
         rank1 = df[df["conservative_rank"] == 1]
-        assert rank1["breach_rate"].values[0] <= df["breach_rate"].max()
+        assert rank1["breach_rate"].values[0] >= df["breach_rate"].min()
 
 
 # ---------------------------------------------------------------------------

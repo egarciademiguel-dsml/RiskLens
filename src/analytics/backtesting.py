@@ -315,10 +315,11 @@ def compare_models(
         .rank(method="min").astype(int)
     )
 
-    # Conservative rank: lowest breach_rate wins, tiebreak by deepest mean_predicted_var
+    # Conservative rank: highest breach_rate wins (model shows most risk),
+    # tiebreak by most negative mean_predicted_var (deeper VaR = more conservative)
     df["conservative_rank"] = (
         df[["breach_rate", "mean_predicted_var"]]
-        .apply(lambda r: (r["breach_rate"], r["mean_predicted_var"]), axis=1)
+        .apply(lambda r: (-r["breach_rate"], r["mean_predicted_var"]), axis=1)
         .rank(method="min").astype(int)
     )
 
