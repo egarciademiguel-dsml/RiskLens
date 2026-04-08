@@ -352,7 +352,7 @@ with tab_tail:
     st.subheader(f"VaR Comparison ({confidence:.0%} Confidence)")
     comparison = pd.DataFrame({
         "Method": ["Normal (Gaussian)", "EVT (GPD/POT)", "XGBoost Quantile"],
-        f"VaR ({confidence:.0%})": [f"{n_var:.4f}", f"{evt['var']:.4f}", f"{xgb_var_value:.4f}"],
+        f"VaR ({confidence:.0%})": [f"{n_var:.4f}", f"{evt['evt_var']:.4f}", f"{xgb_var_value:.4f}"],
         "Type": ["Parametric", "Semi-parametric (tail)", "Nonparametric (ML)"],
     })
     st.dataframe(comparison, use_container_width=True, hide_index=True)
@@ -360,8 +360,8 @@ with tab_tail:
     # --- EVT details ---
     st.subheader("EVT — Extreme Value Theory (GPD)")
     evt_c1, evt_c2, evt_c3 = st.columns(3)
-    evt_c1.metric("EVT VaR", f"{evt['var']:.4f}")
-    evt_c2.metric("EVT CVaR (Expected Shortfall)", f"{evt['cvar']:.4f}")
+    evt_c1.metric("EVT VaR", f"{evt['evt_var']:.4f}")
+    evt_c2.metric("EVT CVaR (Expected Shortfall)", f"{evt['evt_cvar']:.4f}")
     evt_c3.metric("Tail Type", evt["tail_type"])
 
     gpd_c1, gpd_c2, gpd_c3 = st.columns(3)
