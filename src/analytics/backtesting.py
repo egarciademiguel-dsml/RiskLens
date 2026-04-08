@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from scipy.stats import chi2
 
-from src.analytics.evt import fit_gpd, evt_var
 from src.analytics.monte_carlo import (
     simulate_paths, compute_var, fit_garch, fit_hmm, fit_gmm,
 )
@@ -118,6 +117,8 @@ def backtest_evt_var(
     At each step: fit GPD on [0:t+1], compute EVT VaR, check against returns[t+1].
     Returns DataFrame compatible with backtest_summary().
     """
+    from src.analytics.evt import fit_gpd, evt_var
+
     results = []
     n_skipped = 0
     test_indices = range(train_window, len(returns) - 1, step)
