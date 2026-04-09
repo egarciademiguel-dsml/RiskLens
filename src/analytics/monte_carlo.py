@@ -13,9 +13,18 @@ from src.analytics.regime_gmm import generate_log_returns as gmm_log_returns
 from src.analytics.regime_gmm import fit_gmm
 from src.analytics.regime_gmm import predict_current_regime as gmm_predict_current_regime
 from src.analytics.regime_gmm import get_regime_params as gmm_get_regime_params
-from src.analytics.ms_garch import generate_log_returns as ms_garch_log_returns
-from src.analytics.ms_garch import fit_ms_garch
 from src.config import TRADING_DAYS_PER_YEAR
+
+
+def _lazy_ms_garch_log_returns(*args, **kwargs):
+    from src.analytics.ms_garch import generate_log_returns as _fn
+    return _fn(*args, **kwargs)
+
+
+def fit_ms_garch(returns, n_regimes=2, seed=42, **kwargs):
+    from src.analytics.ms_garch import fit_ms_garch as _fn
+    return _fn(returns, n_regimes, seed, **kwargs)
+
 
 # Registry: model name → log-return generator
 _VOLATILITY_MODELS = {
@@ -23,7 +32,7 @@ _VOLATILITY_MODELS = {
     "garch": garch_log_returns,
     "hmm": hmm_log_returns,
     "gmm": gmm_log_returns,
-    "ms_garch": ms_garch_log_returns,
+    "ms_garch": _lazy_ms_garch_log_returns,
 }
 
 
