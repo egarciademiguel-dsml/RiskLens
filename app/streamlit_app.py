@@ -39,8 +39,6 @@ from src.analytics.backtesting import (
     garch_fit,
     ms_garch_fit,
 )
-from src.analytics.evt import evt_summary, normal_var, normal_cvar
-from src.analytics.xgb_var import fit_quantile_model, predict_var
 
 sns.set_theme(style="whitegrid")
 
@@ -232,8 +230,8 @@ st.divider()
 # --- Charts in tabs ---
 
 st.subheader("Charts")
-tab_price, tab_returns, tab_vol, tab_mc, tab_dist, tab_tail, tab_bt = st.tabs(
-    ["Price & Drawdown", "Returns Distribution", "Rolling Volatility", "Monte Carlo Paths", "Final Price Distribution", "Tail Risk (EVT & ML)", "VaR Backtest"]
+tab_price, tab_returns, tab_vol, tab_mc, tab_dist, tab_bt = st.tabs(
+    ["Price & Drawdown", "Returns Distribution", "Rolling Volatility", "Monte Carlo Paths", "Final Price Distribution", "VaR Backtest"]
 )
 
 with tab_price:
@@ -316,68 +314,6 @@ with tab_dist:
     ax_d.legend()
     plt.tight_layout()
     st.pyplot(fig_d)
-
-with tab_tail:
-    st.markdown(
-        "**Three complementary VaR approaches:** Normal (parametric), "
-        "EVT/GPD (tail-focused), and XGBoost quantile regression (nonparametric ML)."
-    )
-
-    with st.spinner("Fitting EVT and XGBoost models..."):
-        # EVT
-        evt = evt_summary(returns, confidence=confidence)
-        n_var = normal_var(returns, confidence=confidence)
-        n_cvar = normal_cvar(returns, confidence=confidence)
-
-        # XGBoost quantile regression (with temporal CV tuning)
-        alpha = 1 - confidence  # e.g. 0.95 confidence -> 0.05 quantile
-        xgb_result = fit_quantile_model(returns, quantile=alpha, seed=42, tune=True)
-        xgb_var_value = xgb_result["predicted_var"]
-
-    # --- Comparison table ---
-    st.subheader(f"VaR Comparison ({confidence:.0%} Confidence)")
-    comparison = pd.DataFrame({
-        "Method": ["Normal (Gaussian)", "EVT (GPD/POT)", "XGBoost Quantile"],
-        f"VaR ({confidence:.0%})": [f"{n_var:.4f}", f"{evt['evt_var']:.4f}", f"{xgb_var_value:.4f}"],
-        "Type": ["Parametric", "Semi-parametric (tail)", "Nonparametric (ML)"],
-    })
-    st.dataframe(comparison, use_container_width=True, hide_index=True)
-
-    # --- EVT details ---
-    st.subheader("EVT — Extreme Value Theory (GPD)")
-    evt_c1, evt_c2, evt_c3 = st.columns(3)
-    evt_c1.metric("EVT VaR", f"{evt['evt_var']:.4f}")
-    evt_c2.metric("EVT CVaR (Expected Shortfall)", f"{evt['evt_cvar']:.4f}")
-    evt_c3.metric("Tail Type", evt["tail_type"])
-
-    gpd_c1, gpd_c2, gpd_c3 = st.columns(3)
-    gpd_c1.metric("Shape (xi)", f"{evt['shape']:.4f}")
-    gpd_c2.metric("Scale (beta)", f"{evt['scale']:.4f}")
-    gpd_c3.metric("Threshold (u)", f"{evt['threshold']:.4f}")
-
-    st.caption(
-        f"GPD fitted to {evt['n_exceedances']} exceedances above the "
-        f"{evt['threshold_quantile']:.0%} quantile of losses ({evt['n_total']} total observations). "
-        f"Normal VaR: {n_var:.4f} | Normal CVaR: {n_cvar:.4f}"
-    )
-
-    # --- XGB details ---
-    st.subheader("XGBoost — Conditional Quantile Regression")
-    st.metric(f"Predicted Next-Day VaR ({confidence:.0%})", f"{xgb_var_value:.4f}")
-    if "best_params" in xgb_result:
-        bp = xgb_result["best_params"]
-        st.caption(
-            f"Tuned via TimeSeriesSplit CV — max_depth={bp['max_depth']}, "
-            f"lr={bp['learning_rate']}, n_estimators={bp['n_estimators']}. "
-            f"Predicts the {alpha:.0%} quantile of next-day returns using rolling features "
-            f"(volatility, skewness, kurtosis, momentum)."
-        )
-    else:
-        st.caption(
-            f"XGBoost predicts the {alpha:.0%} quantile of next-day returns using rolling features "
-            f"(volatility, skewness, kurtosis, momentum). No distributional assumption — "
-            f"a nonparametric audit of the parametric models above."
-        )
 
 with tab_bt:
     st.markdown("Rolling-window VaR backtest — checks if predicted VaR is consistent with observed losses.")
