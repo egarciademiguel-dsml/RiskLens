@@ -79,7 +79,11 @@ with st.sidebar:
         )
 
     st.subheader("Simulation")
-    n_days = st.slider("Forecast horizon (days)", min_value=30, max_value=504, value=252, step=1)
+    _horizon_options = [5, 10, 21, 63, 126, 252, 504, 756, 1260]
+    _horizon_labels = ["1w", "2w", "1m", "3m", "6m", "1y", "2y", "3y", "5y"]
+    _horizon_map = dict(zip(_horizon_labels, _horizon_options))
+    horizon_label = st.select_slider("Forecast horizon", options=_horizon_labels, value="1y")
+    n_days = _horizon_map[horizon_label]
     n_sims = st.select_slider("Simulations", options=[1000, 5000, 10000, 25000, 50000], value=10000)
     confidence = st.select_slider("Confidence level", options=[0.90, 0.95, 0.99], value=0.95)
 
