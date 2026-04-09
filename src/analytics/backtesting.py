@@ -29,6 +29,12 @@ def gmm_fit(returns_window, seed, n_regimes=2):
     return {"volatility_model": "gmm", "gmm_params": fit_gmm(returns_window, n_regimes, seed)}
 
 
+def ms_garch_fit(returns_window, seed, n_regimes=2):
+    from src.analytics.ms_garch import fit_ms_garch
+    return {"volatility_model": "ms_garch",
+            "ms_garch_params": fit_ms_garch(returns_window, n_regimes, seed)}
+
+
 # ---------------------------------------------------------------------------
 # Core backtest
 # ---------------------------------------------------------------------------

@@ -30,10 +30,6 @@ from src.analytics.monte_carlo import (
     simulation_summary,
     fit_t_distribution,
     fit_garch,
-    fit_hmm,
-    predict_current_regime,
-    fit_gmm,
-    gmm_predict_current_regime,
 )
 from src.analytics.backtesting import (
     backtest_var,
@@ -41,8 +37,7 @@ from src.analytics.backtesting import (
     backtest_summary,
     constant_fit,
     garch_fit,
-    hmm_fit,
-    gmm_fit,
+    ms_garch_fit,
 )
 from src.analytics.evt import evt_summary, normal_var, normal_cvar
 from src.analytics.xgb_var import fit_quantile_model, predict_var
@@ -63,26 +58,27 @@ with st.sidebar:
     start_date = st.date_input("Start date", value=pd.Timestamp.now() - pd.DateOffset(years=5))
     end_date = st.date_input("End date", value=pd.Timestamp.now())
 
-    st.subheader("Monte Carlo")
-    dist_choice = st.radio(
-        "Shock Distribution",
-        options=["Normal (Gaussian)", "Student-t (fat tails)"],
+    st.subheader("Risk Model")
+    tier = st.radio(
+        "Model Tier",
+        options=[
+            "Baseline (Constant + Normal)",
+            "GARCH + Student-t",
+            "MS-GARCH + EVT (Full Model)",
+        ],
         index=0,
-        help="Student-t captures extreme events better. Degrees of freedom auto-fitted from data.",
     )
-    use_t = dist_choice.startswith("Student-t")
-    vol_choice = st.radio(
-        "Volatility Model",
-        options=["Constant", "GARCH(1,1)", "HMM Regimes", "GMM Regimes"],
-        index=0,
-        help="GARCH captures volatility clustering. HMM/GMM detect market regimes.",
-    )
-    use_garch = vol_choice == "GARCH(1,1)"
-    use_hmm = vol_choice == "HMM Regimes"
-    use_gmm = vol_choice == "GMM Regimes"
 
-    if use_hmm or use_gmm:
-        n_regimes = st.select_slider("Number of regimes", options=[1, 2, 3], value=2)
+    with st.expander("What does each tier model?"):
+        st.markdown(
+            "| Tier | Volatility | Shocks | Captures |\n"
+            "|------|-----------|--------|----------|\n"
+            "| **Baseline** | Constant | Normal | Symmetric risk, no clustering |\n"
+            "| **GARCH+t** | Time-varying | Student-t | Vol clustering + fat tails |\n"
+            "| **MS-GARCH+EVT** | Regime-switching GARCH | GPD tails | Regime changes + extreme tails |"
+        )
+
+    st.subheader("Simulation")
     n_days = st.slider("Forecast horizon (days)", min_value=30, max_value=504, value=252, step=1)
     n_sims = st.select_slider("Simulations", options=[1000, 5000, 10000, 25000, 50000], value=10000)
     confidence = st.select_slider("Confidence level", options=[0.90, 0.95, 0.99], value=0.95)
@@ -118,89 +114,73 @@ close = df["close"]
 
 st.success(f"Loaded {len(df)} trading days for **{ticker}**")
 
-# --- Win / Lose probability ---
+# --- Model fitting & simulation ---
 
 with st.spinner("Running Monte Carlo simulation..."):
-    dist_str = "t" if use_t else "normal"
-    if use_hmm:
-        vol_str = "hmm"
-    elif use_gmm:
-        vol_str = "gmm"
-    elif use_garch:
-        vol_str = "garch"
-    else:
+    if tier.startswith("Baseline"):
         vol_str = "constant"
-
-    t_info = fit_t_distribution(returns) if use_t else None
-    garch_info = fit_garch(returns) if use_garch else None
-    hmm_info = fit_hmm(returns, n_regimes=n_regimes) if use_hmm else None
-    gmm_info = fit_gmm(returns, n_regimes=n_regimes) if use_gmm else None
-    model_kwargs = {}
-    if use_garch:
-        model_kwargs["garch_params"] = garch_info
-    if use_hmm:
-        model_kwargs["hmm_params"] = hmm_info
-    if use_gmm:
-        model_kwargs["gmm_params"] = gmm_info
+        model_kwargs = {}
+        model_label = "Baseline (Constant + Normal)"
+        garch_info = None
+        t_info = None
+        ms_info = None
+    elif tier.startswith("GARCH"):
+        vol_str = "garch"
+        garch_info = fit_garch(returns)
+        t_info = fit_t_distribution(returns)
+        model_kwargs = {"garch_params": garch_info}
+        model_label = f"GARCH(1,1) + Student-t (df={t_info['df']:.1f})"
+        ms_info = None
+    else:  # MS-GARCH + EVT
+        from src.analytics.ms_garch import fit_ms_garch
+        vol_str = "ms_garch"
+        ms_info = fit_ms_garch(returns, n_regimes=2)
+        model_kwargs = {"ms_garch_params": ms_info}
+        model_label = "MS-GARCH + EVT (2 regimes)"
+        garch_info = None
+        t_info = None
 
     paths = simulate_paths(
         close, returns, n_days=n_days, n_simulations=n_sims,
-        distribution=dist_str,
-        df_t=t_info["df"] if t_info else None,
         volatility_model=vol_str,
         **model_kwargs,
     )
-
-    dist_label = f"Student-t (df={t_info['df']:.1f})" if use_t else "Normal"
-    if use_hmm:
-        vol_label = f"HMM ({n_regimes} regime{'s' if n_regimes > 1 else ''})"
-    elif use_gmm:
-        vol_label = f"GMM ({n_regimes} regime{'s' if n_regimes > 1 else ''})"
-    elif use_garch:
-        vol_label = "GARCH(1,1)"
-    else:
-        vol_label = "Constant σ"
-    model_label = f"{dist_label}, {vol_label}"
 
     final_prices = paths.iloc[-1]
     initial_price = close.iloc[-1]
     summary = simulation_summary(final_prices, initial_price, confidence=confidence)
 
-if use_t and t_info is not None:
+# --- Model info boxes ---
+
+if garch_info is not None:
+    t_detail = f" | Student-t df = {t_info['df']:.2f} ({t_info['tail_description']})" if t_info else ""
     st.info(
-        f"**Student-t fit:** df = {t_info['df']:.2f} | "
-        f"{t_info['tail_description']} | "
-        f"Based on {t_info['n_observations']} observations"
-    )
-if use_garch and garch_info is not None:
-    st.info(
-        f"**GARCH(1,1) fit:** α = {garch_info['alpha']:.4f}, "
-        f"β = {garch_info['beta']:.4f}, "
+        f"**GARCH(1,1) + Student-t:** "
+        f"\u03b1 = {garch_info['alpha']:.4f}, "
+        f"\u03b2 = {garch_info['beta']:.4f}, "
         f"persistence = {garch_info['persistence']:.4f} | "
-        f"Long-run vol = {garch_info['long_run_vol']:.2%}"
+        f"Long-run vol = {garch_info['long_run_vol']:.2%}{t_detail}"
     )
-if use_hmm and hmm_info is not None:
-    current = predict_current_regime(hmm_info, returns)
-    regime_names = {1: {0: "Calm"}, 2: {0: "Calm", 1: "Crisis"},
-                    3: {0: "Calm", 1: "Moderate", 2: "Crisis"}}
-    names = regime_names.get(n_regimes, {})
+
+if ms_info is not None:
+    regime_names = {0: "Calm", 1: "Crisis"}
+    hmm_result = ms_info["hmm_result"]
+    current = ms_info["current_regime"]
     parts = []
-    for i, p in enumerate(hmm_info["regime_params"]):
-        marker = " ← current" if i == current else ""
-        label = names.get(i, f"R{i}")
-        parts.append(f"{label}: μ={p['mu']:.4f}, σ={p['sigma']:.4f}{marker}")
-    st.info(f"**HMM ({n_regimes} regimes):** " + " | ".join(parts))
-if use_gmm and gmm_info is not None:
-    current = gmm_predict_current_regime(gmm_info, returns)
-    regime_names = {1: {0: "Calm"}, 2: {0: "Calm", 1: "Crisis"},
-                    3: {0: "Calm", 1: "Moderate", 2: "Crisis"}}
-    names = regime_names.get(n_regimes, {})
-    parts = []
-    for i, p in enumerate(gmm_info["regime_params"]):
-        marker = " ← current" if i == current else ""
-        label = names.get(i, f"R{i}")
-        parts.append(f"{label}: μ={p['mu']:.4f}, σ={p['sigma']:.4f}{marker}")
-    st.info(f"**GMM ({n_regimes} regimes):** " + " | ".join(parts))
+    for k in range(ms_info["n_regimes"]):
+        gp = ms_info["regime_garch"][k]
+        gpd = ms_info["regime_gpd"][k]
+        mu_k = ms_info["regime_mu"][k]
+        marker = " \u2190 current" if k == current else ""
+        rname = regime_names.get(k, f"R{k}")
+        gpd_str = f"\u03be={gpd['shape']:.3f}" if gpd else "Normal"
+        parts.append(
+            f"{rname}: \u03c3_lr={gp['long_run_vol']:.2%}, "
+            f"persist={gp['persistence']:.3f}, "
+            f"tail={gpd_str}{marker}"
+        )
+    st.info(f"**MS-GARCH + EVT (2 regimes):** " + " | ".join(parts))
+
 col_win, col_lose = st.columns(2)
 col_win.metric("Probability of Gain", f"{summary['prob_gain']:.1%}")
 col_lose.metric("Probability of Loss", f"{summary['prob_loss']:.1%}")
@@ -255,21 +235,22 @@ tab_price, tab_returns, tab_vol, tab_mc, tab_dist, tab_tail, tab_bt = st.tabs(
 with tab_price:
     fig_p, axes_p = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
     axes_p[0].plot(close.index, close.values, color="steelblue", linewidth=0.8)
-    regime_overlay = None
-    if use_hmm and hmm_info is not None and n_regimes > 1:
-        regime_overlay = hmm_info["regime_labels"]
-    elif use_gmm and gmm_info is not None and n_regimes > 1:
-        regime_overlay = gmm_info["regime_labels"]
-    if regime_overlay is not None:
+
+    # Regime overlay for MS-GARCH
+    if ms_info is not None:
+        regime_overlay = ms_info["hmm_result"]["regime_labels"]
+        n_regimes = ms_info["n_regimes"]
         regime_colors = {0: "#2ca02c", 1: "#ff7f0e", 2: "#d62728"}
+        regime_names_chart = {0: "Calm", 1: "Crisis", 2: "Extreme"}
         dates = close.index[:len(regime_overlay)]
         for r in range(n_regimes):
             mask = regime_overlay == r
             axes_p[0].fill_between(
                 dates, close.values[:len(regime_overlay)].min(), close.values[:len(regime_overlay)].max(),
                 where=mask, alpha=0.12, color=regime_colors.get(r, "gray"),
-                label=f"Regime {r}")
+                label=regime_names_chart.get(r, f"Regime {r}"))
         axes_p[0].legend(loc="upper left", fontsize=8)
+
     axes_p[0].set_title(f"{ticker} — Close Price")
     axes_p[0].set_ylabel("Price (USD)")
     dd = drawdown_series(close)
@@ -345,7 +326,7 @@ with tab_tail:
         n_cvar = normal_cvar(returns, confidence=confidence)
 
         # XGBoost quantile regression (with temporal CV tuning)
-        alpha = 1 - confidence  # e.g. 0.95 confidence → 0.05 quantile
+        alpha = 1 - confidence  # e.g. 0.95 confidence -> 0.05 quantile
         xgb_result = fit_quantile_model(returns, quantile=alpha, seed=42, tune=True)
         xgb_var_value = xgb_result["predicted_var"]
 
@@ -366,8 +347,8 @@ with tab_tail:
     evt_c3.metric("Tail Type", evt["tail_type"])
 
     gpd_c1, gpd_c2, gpd_c3 = st.columns(3)
-    gpd_c1.metric("Shape (ξ)", f"{evt['shape']:.4f}")
-    gpd_c2.metric("Scale (β)", f"{evt['scale']:.4f}")
+    gpd_c1.metric("Shape (xi)", f"{evt['shape']:.4f}")
+    gpd_c2.metric("Scale (beta)", f"{evt['scale']:.4f}")
     gpd_c3.metric("Threshold (u)", f"{evt['threshold']:.4f}")
 
     st.caption(
@@ -403,13 +384,10 @@ with tab_bt:
         bt_step = st.slider("Test every N days", min_value=1, max_value=10, value=5, step=1, key="bt_step")
 
     if st.button("Run Backtest", key="bt_run"):
-        # Select fit function based on current model choice
         from functools import partial
-        if use_hmm:
-            fit_fn = partial(hmm_fit, n_regimes=n_regimes)
-        elif use_gmm:
-            fit_fn = partial(gmm_fit, n_regimes=n_regimes)
-        elif use_garch:
+        if tier.startswith("MS-GARCH"):
+            fit_fn = partial(ms_garch_fit, n_regimes=2)
+        elif tier.startswith("GARCH"):
             fit_fn = garch_fit
         else:
             fit_fn = constant_fit
@@ -451,7 +429,7 @@ with tab_bt:
             if len(breaches) > 0:
                 ax_bt.scatter(breaches.index, breaches["actual_return"], color="red", s=20, zorder=5, label=f"Breaches ({len(breaches)})")
             ax_bt.axhline(0, color="gray", linewidth=0.5)
-            ax_bt.set_title(f"{ticker} — VaR Backtest ({vol_label}, {confidence:.0%})")
+            ax_bt.set_title(f"{ticker} — VaR Backtest ({model_label}, {confidence:.0%})")
             ax_bt.set_xlabel("Date")
             ax_bt.set_ylabel("Daily Return")
             ax_bt.legend(fontsize=8)

@@ -210,17 +210,6 @@ class TestGmmMcIntegration:
                                seed=42, volatility_model="gmm", gmm_params=gmm_result)
         assert not p_const.equals(p_gmm)
 
-    def test_gmm_with_t_shocks(self, market_data):
-        close, returns = market_data
-        gmm_result = fit_gmm(returns, n_regimes=2)
-        paths = simulate_paths(
-            close, returns, n_days=60, n_simulations=1000,
-            seed=42, distribution="t", df_t=5.0,
-            volatility_model="gmm", gmm_params=gmm_result,
-        )
-        assert paths.shape == (60, 1000)
-        assert (paths > 0).all().all()
-
     def test_auto_fit_when_no_params(self, market_data):
         close, returns = market_data
         paths = simulate_paths(

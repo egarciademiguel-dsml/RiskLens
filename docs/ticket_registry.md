@@ -27,3 +27,7 @@
 | RL-023 | EVT tail risk + XGB model removal | Done | evt.py (new), vol_rvol.py (deleted), monte_carlo, backtesting, streamlit_app, tests | GPD/POT tail risk, removed broken XGB vol model, 22 new tests |
 | RL-024 | XGB conditional quantile regression | Done | xgb_var.py (new), tests, notebooks | Nonparametric VaR via quantile regression, 3-way comparison (Normal/EVT/XGB), notebook updates |
 | RL-025 | XGBoost temporal CV + EVT backtesting | Done | xgb_var, backtesting, streamlit_app, tests | TimeSeriesSplit CV for XGB hyperparams, EVT walk-forward backtest, 14 new tests |
+| RL-026 | Refactor shock generation: model-owned innovations | Done | monte_carlo, vol_constant, vol_garch, regime_hmm, regime_gmm, streamlit_app, tests | Each model owns its innovation distribution. Constant=Normal, GARCH=Student-t, HMM/GMM=Normal |
+| RL-027 | MS-GARCH: Markov-Switching GARCH + EVT tails | Done | ms_garch.py (new), monte_carlo, backtesting, tests | HMM regimes + per-regime GARCH + per-regime GPD tails, 23 new tests |
+| RL-028 | Controlled comparison notebook | Done | notebooks/model_deep_dive.ipynb | 3 tiers x 3 assets, isolates tail vs vol effect, backtesting, conclusions |
+| RL-029 | App simplification to 3 tiers | Done | app/streamlit_app.py | Baseline/GARCH+t/MS-GARCH+EVT, removed HMM/GMM standalone, tier expander |

@@ -1,8 +1,13 @@
-"""GARCH(1,1) volatility model."""
+"""GARCH(1,1) volatility model.
+
+Innovation distribution: Student-t (auto-fitted df). GARCH captures volatility
+clustering; Student-t captures fat tails in the standardized residuals.
+"""
 
 import numpy as np
 import pandas as pd
 from arch import arch_model
+from scipy.stats import t as t_dist
 
 from src.config import TRADING_DAYS_PER_YEAR
 
@@ -35,13 +40,23 @@ def fit_garch(returns: pd.Series) -> dict:
 
 
 def generate_log_returns(
-    shocks: np.ndarray,
+    n_days: int,
+    n_simulations: int,
     returns: pd.Series,
     seed: int | None = None,
     garch_params: dict | None = None,
+    df_t: float | None = None,
+    innovation: str = "t",
     **kwargs,
 ) -> np.ndarray:
-    """Log returns with GARCH(1,1) time-varying volatility."""
+    """Log returns with GARCH(1,1) time-varying volatility.
+
+    Innovation distribution is controlled by `innovation`:
+      - "t" (default): Student-t with auto-fitted df (fat tails)
+      - "normal": Gaussian (for controlled comparisons)
+
+    df_t: explicit degrees of freedom for Student-t. Auto-fitted if None.
+    """
     if garch_params is None:
         garch_params = fit_garch(returns)
 
@@ -52,7 +67,17 @@ def generate_log_returns(
     prev_var = garch_params["last_variance"]
     prev_resid = garch_params["last_resid"]
 
-    n_days, n_simulations = shocks.shape
+    # Generate shocks based on innovation type
+    if innovation == "t":
+        if df_t is None:
+            df_fit, _, _ = t_dist.fit(returns.dropna())
+            df_t = max(df_fit, 2.1)
+        raw = t_dist.rvs(df=df_t, size=(n_days, n_simulations), random_state=seed)
+        shocks = raw / np.sqrt(df_t / (df_t - 2))  # variance-normalize
+    else:
+        rng = np.random.RandomState(seed)
+        shocks = rng.normal(0, 1, size=(n_days, n_simulations))
+
     log_returns = np.empty_like(shocks)
 
     for t in range(n_days):

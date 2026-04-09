@@ -141,7 +141,8 @@ def get_regime_params(gmm_result: dict, regime_idx: int | None = None) -> dict |
 
 
 def generate_log_returns(
-    shocks: np.ndarray,
+    n_days: int,
+    n_simulations: int,
     returns: pd.Series,
     seed: int | None = None,
     gmm_params: dict | None = None,
@@ -149,14 +150,17 @@ def generate_log_returns(
 ) -> np.ndarray:
     """Log returns using GMM regime-switching drift and volatility.
 
-    Uses a simple Markov transition approximation: transition probabilities
-    are estimated from observed regime label sequences.
+    Generates Normal(0,1) shocks internally. Uses a simple Markov transition
+    approximation: transition probabilities are estimated from observed regime
+    label sequences.
     """
     if gmm_params is None:
         gmm_params = fit_gmm(returns, n_regimes=2, seed=seed or 42)
 
     current_regime = predict_current_regime(gmm_params, returns)
-    n_days, n_simulations = shocks.shape
+
+    rng = np.random.RandomState(seed)
+    shocks = rng.normal(0, 1, size=(n_days, n_simulations))
 
     if gmm_params["n_regimes"] == 1:
         p = gmm_params["regime_params"][0]
@@ -176,7 +180,6 @@ def generate_log_returns(
     all_mu = np.array([p["mu"] for p in gmm_params["regime_params"]])
     all_sigma = np.array([p["sigma"] for p in gmm_params["regime_params"]])
 
-    rng = np.random.RandomState(seed)
     log_returns = np.empty_like(shocks)
     regimes = np.full(n_simulations, current_regime, dtype=int)
 

@@ -105,18 +105,25 @@ def get_regime_params(hmm_result: dict, regime_idx: int | None = None) -> dict |
 
 
 def generate_log_returns(
-    shocks: np.ndarray,
+    n_days: int,
+    n_simulations: int,
     returns: pd.Series,
     seed: int | None = None,
     hmm_params: dict | None = None,
     **kwargs,
 ) -> np.ndarray:
-    """Log returns using HMM regime-switching drift and volatility."""
+    """Log returns using HMM regime-switching drift and volatility.
+
+    Generates Normal(0,1) shocks internally. HMM's value is regime detection
+    (discrete state identification), not tail shape modeling.
+    """
     if hmm_params is None:
         hmm_params = fit_hmm(returns, n_regimes=2, seed=seed or 42)
 
     current_regime = predict_current_regime(hmm_params, returns)
-    n_days, n_simulations = shocks.shape
+
+    rng = np.random.RandomState(seed)
+    shocks = rng.normal(0, 1, size=(n_days, n_simulations))
 
     if hmm_params["n_regimes"] == 1:
         p = hmm_params["regime_params"][0]
@@ -128,7 +135,6 @@ def generate_log_returns(
     all_mu = np.array([p["mu"] for p in hmm_params["regime_params"]])
     all_sigma = np.array([p["sigma"] for p in hmm_params["regime_params"]])
 
-    rng = np.random.RandomState(seed)
     log_returns = np.empty_like(shocks)
     regimes = np.full(n_simulations, current_regime, dtype=int)
 

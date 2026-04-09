@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from scipy.stats import t as t_dist
+from scipy.stats import t as t_dist  # kept for fit_t_distribution()
 
 from src.analytics.vol_constant import generate_log_returns as constant_log_returns
 from src.analytics.vol_garch import generate_log_returns as garch_log_returns
@@ -13,6 +13,8 @@ from src.analytics.regime_gmm import generate_log_returns as gmm_log_returns
 from src.analytics.regime_gmm import fit_gmm
 from src.analytics.regime_gmm import predict_current_regime as gmm_predict_current_regime
 from src.analytics.regime_gmm import get_regime_params as gmm_get_regime_params
+from src.analytics.ms_garch import generate_log_returns as ms_garch_log_returns
+from src.analytics.ms_garch import fit_ms_garch
 from src.config import TRADING_DAYS_PER_YEAR
 
 # Registry: model name → log-return generator
@@ -21,6 +23,7 @@ _VOLATILITY_MODELS = {
     "garch": garch_log_returns,
     "hmm": hmm_log_returns,
     "gmm": gmm_log_returns,
+    "ms_garch": ms_garch_log_returns,
 }
 
 
@@ -30,8 +33,6 @@ def simulate_paths(
     n_days: int = 252,
     n_simulations: int = 10_000,
     seed: int | None = None,
-    distribution: str = "normal",
-    df_t: float | None = None,
     volatility_model: str = "constant",
     **model_kwargs,
 ) -> pd.DataFrame:
@@ -39,33 +40,23 @@ def simulate_paths(
 
     Returns DataFrame of shape (n_days, n_simulations) with simulated prices.
 
-    distribution: "normal" (Gaussian shocks) or "t" (Student-t, fat tails).
-    df_t: degrees of freedom for Student-t. Auto-fitted from returns if None.
-    volatility_model: key into the model registry ("constant", "garch", "hmm", ...).
+    Each volatility model owns its innovation distribution internally:
+      - constant: Normal shocks (baseline)
+      - garch: Student-t shocks (fat tails)
+      - hmm/gmm: Normal shocks (regime detection provides differentiation)
+
+    volatility_model: key into the model registry.
     **model_kwargs: passed directly to the chosen model's generate_log_returns().
     """
-    if distribution not in ("normal", "t"):
-        raise ValueError(f"Unknown distribution '{distribution}'. Use 'normal' or 't'.")
     if volatility_model not in _VOLATILITY_MODELS:
         known = ", ".join(sorted(_VOLATILITY_MODELS))
         raise ValueError(f"Unknown volatility_model '{volatility_model}'. Available: {known}.")
 
     last_price = close.iloc[-1]
 
-    # Generate unit shocks (mean=0, var=1)
-    if distribution == "t":
-        if df_t is None:
-            df_fit, _, _ = t_dist.fit(returns.dropna())
-            df_t = max(df_fit, 2.1)
-        raw = t_dist.rvs(df=df_t, size=(n_days, n_simulations), random_state=seed)
-        shocks = raw / np.sqrt(df_t / (df_t - 2))
-    else:
-        rng = np.random.RandomState(seed)
-        shocks = rng.normal(0, 1, size=(n_days, n_simulations))
-
-    # Delegate to the chosen model
+    # Delegate to the chosen model — each model generates its own shocks
     model_fn = _VOLATILITY_MODELS[volatility_model]
-    log_returns = model_fn(shocks, returns, seed=seed, **model_kwargs)
+    log_returns = model_fn(n_days, n_simulations, returns, seed=seed, **model_kwargs)
 
     paths = last_price * np.exp(np.cumsum(log_returns, axis=0))
     return pd.DataFrame(paths)
