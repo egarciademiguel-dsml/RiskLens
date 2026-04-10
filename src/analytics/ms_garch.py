@@ -97,6 +97,7 @@ def fit_ms_garch(
     # We fit one GARCH on the full series and reparametrize omega per regime
     # via variance targeting. Persistence (alpha+beta) is shared across regimes.
     pct = aligned_returns * 100.0
+    garch_fit_failed = False
     try:
         res = arch_model(pct, vol="Garch", p=1, q=1, mean="Constant", dist="normal").fit(disp="off")
         global_alpha = float(res.params["alpha[1]"])
@@ -109,6 +110,7 @@ def fit_ms_garch(
         last_resid_global = float(resid_pct[-1]) / 100.0
     except Exception:
         # Global GARCH failed: fall back to constant-vol degenerate params
+        garch_fit_failed = True
         global_alpha = 0.0
         global_beta = 0.0
         std_resid = ((aligned_returns - aligned_returns.mean()) / aligned_returns.std()).values
@@ -120,6 +122,7 @@ def fit_ms_garch(
     regime_garch = []
     regime_gpd = []
     regime_mu = []
+    gpd_fit_failed_regimes: list[int] = []
 
     for k in range(n_regimes):
         mask = labels == k
@@ -148,6 +151,9 @@ def fit_ms_garch(
         regime_garch.append(garch_k)
 
         # --- GPD per regime on global standardized residuals filtered by regime ---
+        # Reasons for falling back to Normal: insufficient observations (n_k < 50)
+        # or the GPD fit raised. Both are recorded in gpd_fit_failed_regimes so
+        # the app can warn the user.
         if n_k >= 50:
             try:
                 z_k = std_resid[mask]
@@ -155,8 +161,10 @@ def fit_ms_garch(
                 regime_gpd.append(gpd_k)
             except Exception:
                 regime_gpd.append(None)
+                gpd_fit_failed_regimes.append(k)
         else:
             regime_gpd.append(None)
+            gpd_fit_failed_regimes.append(k)
 
     return {
         "hmm_result": hmm_result,
@@ -169,6 +177,8 @@ def fit_ms_garch(
         "global_alpha": global_alpha,
         "global_beta": global_beta,
         "global_persistence": persistence,
+        "garch_fit_failed": garch_fit_failed,
+        "gpd_fit_failed_regimes": gpd_fit_failed_regimes,
     }
 
 

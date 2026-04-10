@@ -35,6 +35,48 @@ from src.analytics.backtesting import backtest_var, backtest_summary
 
 sns.set_theme(style="whitegrid")
 
+# --- Horizon-aware tier recommendation (RL-041) ---
+# Source: reports/horizon_crossover_results.md (from RL-038 sweep).
+# Hard-coded rather than parsed: small fixed table, parser would be fragile.
+# Tier label "deepest VaR 95% at horizon H" — conservatism, not calibration.
+_TIER_BASELINE = "Baseline (Constant + Normal)"
+_TIER_GARCH_T = "GARCH + Student-t"
+_TIER_MS_GARCH = "MS-GARCH + EVT (Full Model)"
+
+_RECOMMENDATION_TABLE = {
+    # ticker -> {tabulated_horizon_days: tier_label}
+    "BTC-USD": {
+        1: _TIER_BASELINE, 5: _TIER_BASELINE, 10: _TIER_BASELINE, 21: _TIER_BASELINE,
+        63: _TIER_MS_GARCH, 126: _TIER_MS_GARCH, 252: _TIER_MS_GARCH,
+    },
+    "SPY": {
+        1: _TIER_MS_GARCH, 5: _TIER_GARCH_T, 10: _TIER_GARCH_T, 21: _TIER_GARCH_T,
+        63: _TIER_BASELINE, 126: _TIER_MS_GARCH, 252: _TIER_MS_GARCH,
+    },
+    "NVDA": {
+        1: _TIER_BASELINE, 5: _TIER_BASELINE, 10: _TIER_BASELINE, 21: _TIER_BASELINE,
+        63: _TIER_BASELINE, 126: _TIER_MS_GARCH, 252: _TIER_MS_GARCH,
+    },
+}
+_TABULATED_HORIZONS = (1, 5, 10, 21, 63, 126, 252)
+
+
+def recommend_tier(ticker: str, n_days: int) -> str | None:
+    """Return the recommended tier label for (ticker, horizon), or None if untabled.
+
+    Horizons above 252 map to the 252d row (long-horizon regime is already
+    dominated by regime mixing). Other horizons clamp to the nearest tabulated
+    value.
+    """
+    table = _RECOMMENDATION_TABLE.get(ticker.upper())
+    if table is None:
+        return None
+    if n_days >= 252:
+        return table[252]
+    nearest = min(_TABULATED_HORIZONS, key=lambda h: abs(h - n_days))
+    return table[nearest]
+
+
 # --- Page config ---
 
 st.set_page_config(page_title="RiskLens", layout="wide")
@@ -159,22 +201,80 @@ if garch_info is not None:
 
 if ms_info is not None:
     regime_names = {0: "Calm", 1: "Crisis"}
-    hmm_result = ms_info["hmm_result"]
     current = ms_info["current_regime"]
+    n_regimes_fit = ms_info["n_regimes"]
+
+    # Global GARCH line — alpha, beta, persistence are shared across regimes
+    # (RL-034: variance targeting with one global GARCH fit). If the global
+    # fit failed we surface that explicitly rather than silently showing
+    # alpha=beta=0.
+    if ms_info.get("garch_fit_failed"):
+        global_line = (
+            "\u26a0\ufe0f Global GARCH fit failed — using constant vol per regime"
+        )
+    else:
+        global_line = (
+            f"Global GARCH \u03b1={ms_info['global_alpha']:.4f}, "
+            f"\u03b2={ms_info['global_beta']:.4f}, "
+            f"persistence={ms_info['global_persistence']:.4f}"
+        )
+
+    # Per-regime line: long-run vol + tail. GPD fallbacks are flagged with
+    # the reason (insufficient obs vs fit failure).
+    failed_regimes = set(ms_info.get("gpd_fit_failed_regimes", []))
+    # Reason for each fallback: under-50 obs vs fit raised
+    label_counts = {
+        k: int((ms_info["hmm_result"]["regime_labels"] == k).sum())
+        for k in range(n_regimes_fit)
+    }
     parts = []
-    for k in range(ms_info["n_regimes"]):
+    for k in range(n_regimes_fit):
         gp = ms_info["regime_garch"][k]
         gpd = ms_info["regime_gpd"][k]
-        mu_k = ms_info["regime_mu"][k]
         marker = " \u2190 current" if k == current else ""
         rname = regime_names.get(k, f"R{k}")
-        gpd_str = f"\u03be={gpd['shape']:.3f}" if gpd else "Normal"
+        if gpd is not None:
+            tail_str = f"tail \u03be={gpd['shape']:.3f}"
+        elif k in failed_regimes:
+            reason = "n<50" if label_counts[k] < 50 else "fit failed"
+            tail_str = f"tail Normal \u26a0\ufe0f ({reason})"
+        else:
+            tail_str = "tail Normal"
         parts.append(
-            f"{rname}: \u03c3_lr={gp['long_run_vol']:.2%}, "
-            f"persist={gp['persistence']:.3f}, "
-            f"tail={gpd_str}{marker}"
+            f"{rname}: \u03c3_lr={gp['long_run_vol']:.2%}, {tail_str}{marker}"
         )
-    st.info(f"**MS-GARCH + EVT (2 regimes):** " + " | ".join(parts))
+
+    st.info(
+        f"**MS-GARCH + EVT ({n_regimes_fit} regimes):** "
+        + global_line
+        + " | "
+        + " | ".join(parts)
+    )
+
+# --- Horizon-aware tier recommendation (RL-041) ---
+_recommended = recommend_tier(ticker, n_days)
+if _recommended is not None:
+    _matches = _recommended == tier
+    _rec_msg = (
+        f"**Recommended tier for {ticker.upper()} at {horizon_label} horizon:** "
+        f"{_recommended}"
+    )
+    if _matches:
+        st.success(_rec_msg + " — your current selection matches.")
+    else:
+        st.warning(
+            _rec_msg
+            + f" — you are running **{tier}**. The recommendation gives the "
+            "*deepest* VaR 95% at this horizon (most conservative), not "
+            "necessarily the best-calibrated tier — see the backtest tab."
+        )
+    if ticker.upper() == "SPY":
+        st.caption(
+            "Note: SPY's deepest-tier ranking is non-monotonic across horizons "
+            "(MS-GARCH+EVT → GARCH+t → Baseline → MS-GARCH+EVT). The "
+            "recommendation flips as you change the horizon — see "
+            "`reports/horizon_crossover_results.md`."
+        )
 
 col_win, col_lose = st.columns(2)
 col_win.metric("Probability of Gain", f"{summary['prob_gain']:.1%}")

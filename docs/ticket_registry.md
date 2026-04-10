@@ -40,6 +40,6 @@
 | RL-036 | Conditional backtest — bull vs bear regime | Pending | src/analytics/backtesting.py, notebooks/ | Regime-conditional model performance |
 | RL-037 | Update notebook conclusions to match actual results | Done | notebooks/model_deep_dive.ipynb | Evidence-led conclusions citing RL-031..RL-035; duplicate "## 8 Conclusions" cell deleted (RL-036 deferred — does not block) |
 | RL-038 | Elevate horizon crossover as headline finding | Done | notebooks/horizon_crossover.ipynb (new), notebooks/model_deep_dive.ipynb, reports/horizon_crossover_results.md | Standalone notebook (Option A split). Crossover BTC≈63d, NVDA≈126d, SPY≈5d (oscillating). Prior intuition was wrong — SPY crosses earliest |
-| RL-039 | GARCH fallback transparency in MS-GARCH output | Pending | src/analytics/ms_garch.py, app/streamlit_app.py | Surface when a regime fell back to constant vol |
+| RL-039 | MS-GARCH fit quality transparency | Done | src/analytics/ms_garch.py, app/streamlit_app.py | Reframed post-RL-034: surface global GARCH fit failure + per-regime GPD fallback (n<50 vs fit failed); info box shows shared α/β/persistence once + per-regime σ_lr & tail |
 | RL-040 | Cap Student-t df at minimum 3.0 | Pending | src/analytics/vol_garch.py | Avoid pathological tail estimates |
-| RL-041 | Model recommendation logic in app (phase 4) | Pending | app/streamlit_app.py | Suggest tier based on horizon + backtest |
+| RL-041 | Model recommendation logic in app (phase 4) | Done | app/streamlit_app.py | Hard-coded horizon×ticker recommendation table from RL-038; success/warning panel; SPY non-monotonic note; "deepest VaR ≠ best calibrated" caveat |
