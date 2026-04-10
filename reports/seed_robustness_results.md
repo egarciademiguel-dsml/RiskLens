@@ -24,12 +24,12 @@ Stability threshold: CV < 5% = stable, 5-15% = moderate, >15% = unstable.
 
 ## Key Findings
 
-1. **All estimates are stable.** Every CV is under 5%, most under 3%. The point estimates from the deep dive are reliable — no seed sensitivity concern.
+1. **All estimates are stable.** Every CV is under 5%, most under 3%. The point estimates from the deep dive are reproducible — no seed sensitivity concern.
 
 2. **The kurtosis=81.77 scare is a non-issue for VaR/CVaR.** BTC GARCH+t has the highest CVaR 99% CV at 2.1% — meaning CVaR moves ±1.7pp across seeds around a mean of -82.23%. The extreme kurtosis comes from rare outlier paths that affect the 4th moment but barely move the percentile-based risk metrics.
 
-3. **MS-GARCH+EVT is the most stable model** (lowest CVs across the board). This is surprising given its complexity — the regime structure and EVT tails produce less seed-dependent results than simpler models. The regime assignments are deterministic (fitted once), so only the shock generation varies across seeds.
+3. **MS-GARCH+EVT has the lowest CV — but that's stability of bias, not accuracy.** The regime assignments are deterministic (fitted once), so only shock generation varies across seeds. The model consistently produces the same answer — but the backtest shows that answer is wrong (11.7% breach rate vs 5% expected). Low variance + high bias = a model that's reliably miscalibrated.
 
-4. **GARCH+t is the least stable** (highest CVs), particularly for SPY CVaR 99% (4.5%). The heavy-tailed Student-t shocks introduce more simulation variance, but even this worst case is well within acceptable bounds.
+4. **GARCH+t has the highest CVs** (up to 4.5% for SPY CVaR 99%), driven by heavy-tailed Student-t shocks. But it's also the best-calibrated model in the backtest. Higher simulation variance + good accuracy = the estimates are noisier but centered on the right value.
 
-5. **Stability ranking by CV (VaR 95%):** MS-GARCH+EVT (0.5-2.3%) > Baseline (0.8-2.5%) > GARCH+t (1.1-3.6%).
+5. **Stability ≠ accuracy.** Seed robustness confirms that the point estimates are reproducible, but says nothing about whether they're correct. The backtest is the accuracy test — this is just the precision test. MS-GARCH is precise but inaccurate; GARCH+t is slightly less precise but well-calibrated.
