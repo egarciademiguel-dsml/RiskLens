@@ -208,15 +208,22 @@ if ms_info is not None:
     # (RL-034: variance targeting with one global GARCH fit). If the global
     # fit failed we surface that explicitly rather than silently showing
     # alpha=beta=0.
+    # Defensive .get(): on Streamlit Cloud the ms_garch module can be cached
+    # across redeploys, so the dict may not yet have the RL-039 keys even
+    # though the app code does. Fall back to the first regime's GARCH params.
     if ms_info.get("garch_fit_failed"):
         global_line = (
             "\u26a0\ufe0f Global GARCH fit failed — using constant vol per regime"
         )
     else:
+        _g0 = ms_info["regime_garch"][0]
+        _alpha = ms_info.get("global_alpha", _g0.get("alpha", 0.0))
+        _beta = ms_info.get("global_beta", _g0.get("beta", 0.0))
+        _persistence = ms_info.get("global_persistence", _g0.get("persistence", _alpha + _beta))
         global_line = (
-            f"Global GARCH \u03b1={ms_info['global_alpha']:.4f}, "
-            f"\u03b2={ms_info['global_beta']:.4f}, "
-            f"persistence={ms_info['global_persistence']:.4f}"
+            f"Global GARCH \u03b1={_alpha:.4f}, "
+            f"\u03b2={_beta:.4f}, "
+            f"persistence={_persistence:.4f}"
         )
 
     # Per-regime line: long-run vol + tail. GPD fallbacks are flagged with
