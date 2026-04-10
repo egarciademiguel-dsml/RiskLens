@@ -10,6 +10,7 @@ Innovation distribution: semi-parametric (Normal bulk + GPD left tail) per regim
 
 import numpy as np
 import pandas as pd
+from arch import arch_model
 from scipy.stats import genpareto, norm
 
 from src.analytics.regime_hmm import fit_hmm, predict_current_regime
@@ -89,6 +90,33 @@ def fit_ms_garch(
     labels = hmm_result["regime_labels"]
     aligned_returns = clean_returns.iloc[:len(labels)]
 
+    # --- Fit GLOBAL GARCH(1,1) on the full series ---
+    # Volatility clustering is a property of the return process, not of regime
+    # labels. Slicing returns by regime destroys serial dependence and collapses
+    # alpha to 0 in sparse regimes (see docs/decisions/ms_garch_unified.md).
+    # We fit one GARCH on the full series and reparametrize omega per regime
+    # via variance targeting. Persistence (alpha+beta) is shared across regimes.
+    pct = aligned_returns * 100.0
+    try:
+        res = arch_model(pct, vol="Garch", p=1, q=1, mean="Constant", dist="normal").fit(disp="off")
+        global_alpha = float(res.params["alpha[1]"])
+        global_beta = float(res.params["beta[1]"])
+        global_mu_pct = float(res.params["mu"])
+        cond_vol_pct = res.conditional_volatility.values
+        resid_pct = pct.values - global_mu_pct
+        std_resid = resid_pct / cond_vol_pct
+        last_var_global = float(cond_vol_pct[-1] ** 2) / 1e4
+        last_resid_global = float(resid_pct[-1]) / 100.0
+    except Exception:
+        # Global GARCH failed: fall back to constant-vol degenerate params
+        global_alpha = 0.0
+        global_beta = 0.0
+        std_resid = ((aligned_returns - aligned_returns.mean()) / aligned_returns.std()).values
+        last_var_global = float(aligned_returns.var())
+        last_resid_global = 0.0
+
+    persistence = global_alpha + global_beta
+
     regime_garch = []
     regime_gpd = []
     regime_mu = []
@@ -100,28 +128,30 @@ def fit_ms_garch(
         mu_k = float(r_k.mean()) if n_k > 0 else 0.0
         regime_mu.append(mu_k)
 
-        # --- GARCH per regime ---
-        if n_k >= min_regime_obs:
-            try:
-                garch_k = fit_garch(r_k)
-            except Exception:
-                # GARCH failed to converge: fall back to constant vol
-                sigma_k = float(r_k.std()) if n_k > 1 else float(clean_returns.std())
-                garch_k = _constant_garch_fallback(sigma_k)
+        # --- Per-regime omega via variance targeting ---
+        # E[sigma²] = omega / (1 - alpha - beta)  =>  omega_k = sigma²_k * (1 - persistence)
+        sigma2_k = float(r_k.var()) if n_k > 1 else float(aligned_returns.var())
+        if persistence < 1.0:
+            omega_k = sigma2_k * (1.0 - persistence)
         else:
-            # Too few observations: degenerate GARCH (constant vol)
-            sigma_k = float(r_k.std()) if n_k > 1 else float(clean_returns.std())
-            garch_k = _constant_garch_fallback(sigma_k)
+            omega_k = sigma2_k * 0.01  # near non-stationary safety net
 
+        garch_k = {
+            "omega": omega_k,
+            "alpha": global_alpha,
+            "beta": global_beta,
+            "long_run_vol": float(np.sqrt(sigma2_k * 252)),
+            "last_variance": last_var_global,
+            "last_resid": last_resid_global,
+            "persistence": persistence,
+        }
         regime_garch.append(garch_k)
 
-        # --- GPD per regime (on standardized residuals) ---
+        # --- GPD per regime on global standardized residuals filtered by regime ---
         if n_k >= 50:
             try:
-                # Compute standardized residuals for this regime
-                resid_k = _compute_standardized_residuals(r_k, garch_k, mu_k)
-                # Fit GPD on the loss tail of standardized residuals
-                gpd_k = fit_gpd(pd.Series(-resid_k), threshold_quantile)
+                z_k = std_resid[mask]
+                gpd_k = fit_gpd(pd.Series(-z_k), threshold_quantile)
                 regime_gpd.append(gpd_k)
             except Exception:
                 regime_gpd.append(None)
@@ -136,6 +166,9 @@ def fit_ms_garch(
         "regime_mu": regime_mu,
         "current_regime": current_regime,
         "min_regime_obs": min_regime_obs,
+        "global_alpha": global_alpha,
+        "global_beta": global_beta,
+        "global_persistence": persistence,
     }
 
 
