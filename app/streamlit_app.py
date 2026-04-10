@@ -33,7 +33,6 @@ from src.analytics.monte_carlo import (
 )
 from src.analytics.backtesting import (
     backtest_var,
-    backtest_evt_var,
     backtest_summary,
     constant_fit,
     garch_fit,
@@ -317,107 +316,57 @@ with tab_dist:
 
 with tab_bt:
     st.markdown("Rolling-window VaR backtest — checks if predicted VaR is consistent with observed losses.")
-    bt_col1, bt_col2 = st.columns(2)
-    with bt_col1:
-        bt_window = st.slider("Training window (days)", min_value=126, max_value=504, value=252, step=1, key="bt_window")
-    with bt_col2:
-        bt_step = st.slider("Test every N days", min_value=1, max_value=10, value=5, step=1, key="bt_step")
 
-    if st.button("Run Backtest", key="bt_run"):
-        from functools import partial
-        if tier.startswith("MS-GARCH"):
-            fit_fn = partial(ms_garch_fit, n_regimes=2)
-        elif tier.startswith("GARCH"):
-            fit_fn = garch_fit
-        else:
-            fit_fn = constant_fit
+    from functools import partial
+    if tier.startswith("MS-GARCH"):
+        fit_fn = partial(ms_garch_fit, n_regimes=2)
+    elif tier.startswith("GARCH"):
+        fit_fn = garch_fit
+    else:
+        fit_fn = constant_fit
 
-        with st.spinner("Running backtest (this may take a minute)..."):
-            bt_results = backtest_var(
-                close, returns, fit_fn=fit_fn,
-                train_window=bt_window, confidence=confidence,
-                n_simulations=2000, step=bt_step,
-            )
+    with st.spinner("Running backtest..."):
+        bt_results = backtest_var(
+            close, returns, fit_fn=fit_fn,
+            train_window=252, confidence=confidence,
+            n_simulations=2000, step=5,
+        )
 
-        if len(bt_results) == 0:
-            st.warning("Not enough data for backtest with this window size.")
-        else:
-            bt_sum = backtest_summary(bt_results, confidence=confidence)
+    if len(bt_results) == 0:
+        st.warning("Not enough data for backtest (need >252 trading days).")
+    else:
+        bt_sum = backtest_summary(bt_results, confidence=confidence)
 
-            # Metrics
-            mc1, mc2, mc3, mc4 = st.columns(4)
-            mc1.metric("Observations", bt_sum["n_obs"])
-            mc2.metric("Breaches", f"{bt_sum['n_breaches']} ({bt_sum['breach_rate']:.1%})")
-            mc3.metric("Kupiec p-value", f"{bt_sum['kupiec']['p_value']:.3f}")
-            mc4.metric("Christoffersen p-value", f"{bt_sum['christoffersen']['p_value']:.3f}")
+        # Metrics
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        mc1.metric("Observations", bt_sum["n_obs"])
+        mc2.metric("Breaches", f"{bt_sum['n_breaches']} ({bt_sum['breach_rate']:.1%})")
+        mc3.metric("Kupiec p-value", f"{bt_sum['kupiec']['p_value']:.3f}")
+        mc4.metric("Christoffersen p-value", f"{bt_sum['christoffersen']['p_value']:.3f}")
 
-            # Pass/fail
-            k_status = "PASS" if bt_sum["kupiec"]["pass"] else "FAIL"
-            c_status = "PASS" if bt_sum["christoffersen"]["pass"] else "FAIL"
-            expected = bt_sum["expected_rate"]
-            st.markdown(
-                f"**Expected breach rate:** {expected:.1%} | "
-                f"**Observed:** {bt_sum['breach_rate']:.1%} | "
-                f"**Kupiec:** {k_status} | **Christoffersen:** {c_status}"
-            )
+        # Pass/fail
+        k_status = "PASS" if bt_sum["kupiec"]["pass"] else "FAIL"
+        c_status = "PASS" if bt_sum["christoffersen"]["pass"] else "FAIL"
+        st.markdown(
+            f"**Expected breach rate:** {bt_sum['expected_rate']:.1%} | "
+            f"**Observed:** {bt_sum['breach_rate']:.1%} | "
+            f"**Kupiec:** {k_status} | **Christoffersen:** {c_status}"
+        )
 
-            # Chart: actual returns vs VaR with breach markers
-            fig_bt, ax_bt = plt.subplots(figsize=(12, 5))
-            ax_bt.plot(bt_results.index, bt_results["actual_return"], color="steelblue", linewidth=0.6, alpha=0.7, label="Actual return")
-            ax_bt.plot(bt_results.index, bt_results["predicted_var"], color="crimson", linewidth=1, linestyle="--", label=f"VaR {confidence:.0%}")
-            breaches = bt_results[bt_results["breach"]]
-            if len(breaches) > 0:
-                ax_bt.scatter(breaches.index, breaches["actual_return"], color="red", s=20, zorder=5, label=f"Breaches ({len(breaches)})")
-            ax_bt.axhline(0, color="gray", linewidth=0.5)
-            ax_bt.set_title(f"{ticker} — VaR Backtest ({model_label}, {confidence:.0%})")
-            ax_bt.set_xlabel("Date")
-            ax_bt.set_ylabel("Daily Return")
-            ax_bt.legend(fontsize=8)
-            plt.tight_layout()
-            st.pyplot(fig_bt)
-
-    # --- EVT backtest ---
-    st.markdown("---")
-    st.markdown("**EVT (GPD/POT) Backtest** — expanding-window walk-forward validation for Extreme Value Theory VaR.")
-    if st.button("Run EVT Backtest", key="evt_bt_run"):
-        with st.spinner("Running EVT backtest..."):
-            evt_bt = backtest_evt_var(
-                returns, confidence=confidence,
-                train_window=bt_window, step=bt_step,
-            )
-
-        if len(evt_bt) == 0:
-            st.warning("Not enough data for EVT backtest with this window size.")
-        else:
-            evt_sum = backtest_summary(evt_bt, confidence=confidence)
-
-            ec1, ec2, ec3, ec4 = st.columns(4)
-            ec1.metric("Observations", evt_sum["n_obs"])
-            ec2.metric("Breaches", f"{evt_sum['n_breaches']} ({evt_sum['breach_rate']:.1%})")
-            ec3.metric("Kupiec p-value", f"{evt_sum['kupiec']['p_value']:.3f}")
-            ec4.metric("Christoffersen p-value", f"{evt_sum['christoffersen']['p_value']:.3f}")
-
-            ek_status = "PASS" if evt_sum["kupiec"]["pass"] else "FAIL"
-            ec_status = "PASS" if evt_sum["christoffersen"]["pass"] else "FAIL"
-            st.markdown(
-                f"**Expected breach rate:** {evt_sum['expected_rate']:.1%} | "
-                f"**Observed:** {evt_sum['breach_rate']:.1%} | "
-                f"**Kupiec:** {ek_status} | **Christoffersen:** {ec_status}"
-            )
-
-            fig_evt_bt, ax_evt_bt = plt.subplots(figsize=(12, 5))
-            ax_evt_bt.plot(evt_bt.index, evt_bt["actual_return"], color="steelblue", linewidth=0.6, alpha=0.7, label="Actual return")
-            ax_evt_bt.plot(evt_bt.index, evt_bt["predicted_var"], color="darkgreen", linewidth=1, linestyle="--", label=f"EVT VaR {confidence:.0%}")
-            evt_breaches = evt_bt[evt_bt["breach"]]
-            if len(evt_breaches) > 0:
-                ax_evt_bt.scatter(evt_breaches.index, evt_breaches["actual_return"], color="red", s=20, zorder=5, label=f"Breaches ({len(evt_breaches)})")
-            ax_evt_bt.axhline(0, color="gray", linewidth=0.5)
-            ax_evt_bt.set_title(f"{ticker} — EVT VaR Backtest ({confidence:.0%})")
-            ax_evt_bt.set_xlabel("Date")
-            ax_evt_bt.set_ylabel("Daily Return")
-            ax_evt_bt.legend(fontsize=8)
-            plt.tight_layout()
-            st.pyplot(fig_evt_bt)
+        # Chart: actual returns vs VaR with breach markers
+        fig_bt, ax_bt = plt.subplots(figsize=(12, 5))
+        ax_bt.plot(bt_results.index, bt_results["actual_return"], color="steelblue", linewidth=0.6, alpha=0.7, label="Actual return")
+        ax_bt.plot(bt_results.index, bt_results["predicted_var"], color="crimson", linewidth=1, linestyle="--", label=f"VaR {confidence:.0%}")
+        breaches = bt_results[bt_results["breach"]]
+        if len(breaches) > 0:
+            ax_bt.scatter(breaches.index, breaches["actual_return"], color="red", s=20, zorder=5, label=f"Breaches ({len(breaches)})")
+        ax_bt.axhline(0, color="gray", linewidth=0.5)
+        ax_bt.set_title(f"{ticker} — VaR Backtest ({model_label}, {confidence:.0%})")
+        ax_bt.set_xlabel("Date")
+        ax_bt.set_ylabel("Daily Return")
+        ax_bt.legend(fontsize=8)
+        plt.tight_layout()
+        st.pyplot(fig_bt)
 
 st.divider()
 
