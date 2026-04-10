@@ -31,13 +31,7 @@ from src.analytics.monte_carlo import (
     fit_t_distribution,
     fit_garch,
 )
-from src.analytics.backtesting import (
-    backtest_var,
-    backtest_summary,
-    constant_fit,
-    garch_fit,
-    ms_garch_fit,
-)
+from src.analytics.backtesting import backtest_var, backtest_summary
 
 sns.set_theme(style="whitegrid")
 
@@ -317,19 +311,20 @@ with tab_dist:
 with tab_bt:
     st.markdown("Rolling-window VaR backtest — checks if predicted VaR is consistent with observed losses.")
 
-    from functools import partial
+    # Reuse model already fitted upstream — no refitting per window
     if tier.startswith("MS-GARCH"):
-        fit_fn = partial(ms_garch_fit, n_regimes=2)
+        _bt_kwargs = {"volatility_model": "ms_garch", "ms_garch_params": ms_info}
     elif tier.startswith("GARCH"):
-        fit_fn = garch_fit
+        _bt_kwargs = {"volatility_model": "garch", "garch_params": garch_info}
     else:
-        fit_fn = constant_fit
+        _bt_kwargs = {}
+    fit_fn = lambda rw, s: _bt_kwargs
 
     with st.spinner("Running backtest..."):
         bt_results = backtest_var(
             close, returns, fit_fn=fit_fn,
             train_window=252, confidence=confidence,
-            n_simulations=2000, step=5,
+            n_simulations=500, step=5,
         )
 
     if len(bt_results) == 0:
