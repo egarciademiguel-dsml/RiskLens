@@ -230,6 +230,12 @@ def generate_log_returns(
     log_returns = np.empty((n_days, n_simulations))
 
     for t in range(n_days):
+        # Regime transition FIRST — so day-1 VaR reflects tomorrow's regime
+        u = rng.rand(n_simulations)
+        cum_probs = np.cumsum(trans_mat[regimes], axis=1)
+        regimes = (u[:, None] > cum_probs).sum(axis=1)
+        regimes = np.clip(regimes, 0, n_regimes - 1)
+
         for k in range(n_regimes):
             mask = regimes == k
             n_k = mask.sum()
@@ -259,11 +265,5 @@ def generate_log_returns(
             # Update GARCH state
             prev_resid[mask] = sigma_k * shock_k
             prev_var[mask] = curr_var_k
-
-        # Regime transition via HMM transition matrix
-        u = rng.rand(n_simulations)
-        cum_probs = np.cumsum(trans_mat[regimes], axis=1)
-        regimes = (u[:, None] > cum_probs).sum(axis=1)
-        regimes = np.clip(regimes, 0, n_regimes - 1)
 
     return log_returns
