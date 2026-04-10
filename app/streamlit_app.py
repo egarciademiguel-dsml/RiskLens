@@ -199,6 +199,39 @@ if garch_info is not None:
         f"Long-run vol = {garch_info['long_run_vol']:.2%}{t_detail}"
     )
 
+    # RL-040: surface Student-t df < 3 as a stability warning. Below df=3 the
+    # Student-t's kurtosis is infinite; below df=2 variance is infinite. In
+    # either case GARCH's long-run variance σ_lr = ω/(1-α-β) loses its
+    # theoretical meaning because the unconditional variance of the
+    # innovations it's scaling is undefined. The model still *runs* (we use
+    # df_raw for the check but apply a 2.1 numerical floor inside the
+    # simulator so path generation stays finite), but the user should know
+    # the finite-variance assumption underpinning the σ_lr and ES numbers is
+    # being violated. We surface this rather than hide it behind a cap.
+    if t_info is not None:
+        df_raw = t_info.get("df_raw", t_info["df"])
+        if df_raw < 2.0:
+            st.error(
+                f"\u26a0\ufe0f **Danger zone — Student-t df = {df_raw:.2f} < 2.** "
+                "The fitted innovation distribution has **infinite variance**. "
+                "GARCH's long-run variance and the Monte Carlo ES are not "
+                "theoretically defined in this regime. Treat all tail numbers "
+                "for this asset as qualitative only; prefer the MS-GARCH+EVT "
+                "tier, which makes no finite-variance assumption."
+            )
+        elif df_raw < 3.0:
+            st.warning(
+                f"\u26a0\ufe0f **Stability warning — Student-t df = {df_raw:.2f} < 3.** "
+                "Variance is finite but **kurtosis is infinite**. The "
+                "finite-variance assumption behind GARCH's long-run vol "
+                "\u03c3_lr still holds nominally, but tail moments (ES, "
+                "higher quantiles) are unstable under resampling. This is "
+                "information, not a bug — the asset's empirical tail is "
+                "heavier than a well-behaved Student-t can express. For "
+                "tail-sensitive decisions prefer the MS-GARCH+EVT tier, "
+                "which models the tail non-parametrically via GPD."
+            )
+
 if ms_info is not None:
     regime_names = {0: "Calm", 1: "Crisis"}
     current = ms_info["current_regime"]

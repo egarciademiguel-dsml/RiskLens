@@ -35,3 +35,6 @@ Thumbs.db
 
 # Local one-off scripts (notebook transforms, reproducers — not part of the deliverable)
 scripts/
+
+# Internal evaluation (defense prep, not public)
+docs/internal_evaluation.md
