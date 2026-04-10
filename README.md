@@ -73,9 +73,12 @@ RiskLens/
 │   └── config.py                 # Project paths, defaults, constants
 ├── tests/                        # 271 tests across 9 modules
 ├── notebooks/
-│   ├── risk_analysis_walkthrough.ipynb  # Guided tour, 11 sections (includes EVT + XGB quantile)
-│   └── model_deep_dive.ipynb           # Controlled comparison: 3 tiers x 3 assets, tail vs vol isolation, backtesting
-├── docs/                         # Tickets, decisions, workflow
+│   ├── risk_analysis_walkthrough.ipynb   # Guided tour, 11 sections (includes EVT + XGB quantile)
+│   ├── model_comparison.ipynb            # Controlled comparison: 3 tiers x 3 assets, tail vs vol isolation, seed robustness, MS-GARCH internals
+│   ├── validation_backtesting.ipynb      # EVT + XGBoost non-MC audit; rolling-window backtest of the 3 tiers
+│   ├── model_diagnosis.ipynb             # Why MS-GARCH fails/passes; failure-mode taxonomy; overall conclusions
+│   └── horizon_crossover.ipynb           # Horizon at which each tier's ranking flips — drives app recommendation
+├── docs/                         # Tickets, decisions, workflow, conclusions, assumptions
 ├── data/                         # Raw/processed (gitignored)
 ├── .github/workflows/            # CI pipeline
 ├── main.py                       # CLI entry point
@@ -106,6 +109,11 @@ Volatility models follow a **dispatcher pattern**: `simulate_paths()` delegates 
 Two non-MC risk modules sit alongside the simulation pipeline: **EVT** (GPD/POT for theoretically justified tail risk) and **XGBoost conditional quantile regression** (nonparametric VaR that audits parametric models). ML validates — it doesn't replace.
 
 Data follows a **no-accumulation policy**: one file per asset maximum, overwrite on refresh, no growing local store.
+
+## Findings & Assumptions
+
+- **[`docs/conclusions.md`](docs/conclusions.md)** — full prose synthesis of every finding across the deep-dive notebooks: horizon dependence, 3-tier head-to-head, seed robustness, EVT/XGBoost audit, backtest results, MS-GARCH diagnosis, and the failure-mode taxonomy ("each tier fails differently").
+- **[`docs/assumptions.md`](docs/assumptions.md)** — consolidated list of modeling assumptions behind every result: data (log-returns, fit window, survivorship), GARCH (stationarity, symmetry, Student-t df as stability indicator), MS-GARCH unified spec (shared persistence, per-regime ω, per-regime GPD), EVT (threshold, iid exceedances), Monte Carlo (seed sensitivity, model-owned innovations), backtesting (Kupiec/Christoffersen), HMM (2 regimes, Gaussian emissions).
 
 ## Testing
 

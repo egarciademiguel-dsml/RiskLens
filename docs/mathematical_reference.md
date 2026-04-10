@@ -2,6 +2,8 @@
 
 A concise summary of the models, metrics, and assumptions behind RiskLens.
 
+> For the **consolidated assumptions list** (data, GARCH, MS-GARCH, EVT, Monte Carlo, backtesting, HMM), see [`assumptions.md`](assumptions.md). For the **narrative synthesis of findings** across the deep-dive notebooks, see [`conclusions.md`](conclusions.md). This file covers the mathematical definitions; those two cover the interpretation.
+
 ---
 
 ## 1. Return Types

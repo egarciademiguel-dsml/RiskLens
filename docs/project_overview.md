@@ -21,7 +21,17 @@ Decision-support app for contextual financial asset risk assessment. Built with 
 - **Frontend**: Streamlit (`app/streamlit_app.py`)
 - **Core logic**: Python modules under `src/` (data, analytics)
 - **Tests**: `tests/`
-- **Docs**: `docs/`
+- **Docs**: `docs/` — includes [`conclusions.md`](conclusions.md) (full prose synthesis of deep-dive findings) and [`assumptions.md`](assumptions.md) (consolidated modeling assumptions)
+
+## Notebook Structure
+
+- `notebooks/risk_analysis_walkthrough.ipynb` — guided tour through every feature of the app on a single asset.
+- `notebooks/model_comparison.ipynb` — controlled comparisons (tail effect, vol effect at 252d and 21d, 3 tiers head-to-head, seed robustness, MS-GARCH internals).
+- `notebooks/validation_backtesting.ipynb` — non-MC VaR cross-check (EVT + XGBoost) and rolling-window backtest of the 3 tiers.
+- `notebooks/model_diagnosis.ipynb` — why MS-GARCH fails/passes the backtest; failure-mode taxonomy; overall conclusions.
+- `notebooks/horizon_crossover.ipynb` — horizon at which each tier's ranking flips; drives the app's horizon-aware recommendation.
+
+The three "model_*" notebooks were split from a single 41-cell `model_deep_dive.ipynb` under [RL-042](tickets/RL-042.md) to improve navigability. Each is self-contained and runs standalone in under ~5 minutes.
 
 ## Tooling
 

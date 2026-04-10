@@ -105,7 +105,7 @@ regime is relative to its crisis frequency.
 
 ### Caveats when consuming the recommendation table
 
-1. **Deepest VaR ≠ best calibrated.** Section 7 of `model_deep_dive` shows
+1. **Deepest VaR ≠ best calibrated.** Section 3 of `validation_backtesting.ipynb` (formerly §7 of `model_deep_dive`) shows
    that on the daily backtest GARCH+t over-breaches and Baseline can look
    over-conservative. The recommendation here is "the most conservative
    estimate at horizon H," not "the best-calibrated model at horizon H."
