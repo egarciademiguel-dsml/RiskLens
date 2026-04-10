@@ -31,3 +31,15 @@
 | RL-027 | MS-GARCH: Markov-Switching GARCH + EVT tails | Done | ms_garch.py (new), monte_carlo, backtesting, tests | HMM regimes + per-regime GARCH + per-regime GPD tails, 23 new tests |
 | RL-028 | Controlled comparison notebook | Done | notebooks/model_deep_dive.ipynb | 3 tiers x 3 assets, isolates tail vs vol effect, backtesting, conclusions |
 | RL-029 | App simplification to 3 tiers | Done | app/streamlit_app.py | Baseline/GARCH+t/MS-GARCH+EVT, removed HMM/GMM standalone, tier expander |
+| RL-030 | Fix `conservative_rank` bug | Done | src/analytics/backtesting.py | Lowest breach rate now ranks as most conservative |
+| RL-031 | Multi-seed stability analysis | Done | src/analytics/seed_robustness.py, notebooks/, reports/seed_robustness_results.md | Reusable module shared by notebook + app; CV per metric; stability ≠ accuracy |
+| RL-032 | Diagnose MS-GARCH backtest failure | Done | notebooks/model_deep_dive.ipynb, reports/ms_garch_diagnosis_results.md | Root cause: regime-sliced GARCH collapses alpha to 0 in sparse regimes |
+| RL-033 | MS-GARCH stage 1 — regime transition before return generation | Done | src/analytics/ms_garch.py, reports/ms_garch_fix_results.md | 11.7% → 7.0% breach, Kupiec FAIL → PASS |
+| RL-034 | MS-GARCH unified — global GARCH + per-regime omega + per-regime GPD | Done | src/analytics/ms_garch.py, docs/decisions/ms_garch_unified.md, reports/ms_garch_unified_results.md | 7.0% → 5.4% breach, Kupiec p=0.74; shared-persistence assumption documented |
+| RL-035 | "When Each Model Fails" notebook section | Done | notebooks/model_deep_dive.ipynb, reports/rl035_when_each_model_fails.md | Evidence-led failure-mode taxonomy; Baseline beats GARCH+t overall (counter-intuitive) |
+| RL-036 | Conditional backtest — bull vs bear regime | Pending | src/analytics/backtesting.py, notebooks/ | Regime-conditional model performance |
+| RL-037 | Update notebook conclusions to match actual results | Done | notebooks/model_deep_dive.ipynb | Evidence-led conclusions citing RL-031..RL-035; duplicate "## 8 Conclusions" cell deleted (RL-036 deferred — does not block) |
+| RL-038 | Elevate horizon crossover as headline finding | Done | notebooks/horizon_crossover.ipynb (new), notebooks/model_deep_dive.ipynb, reports/horizon_crossover_results.md | Standalone notebook (Option A split). Crossover BTC≈63d, NVDA≈126d, SPY≈5d (oscillating). Prior intuition was wrong — SPY crosses earliest |
+| RL-039 | GARCH fallback transparency in MS-GARCH output | Pending | src/analytics/ms_garch.py, app/streamlit_app.py | Surface when a regime fell back to constant vol |
+| RL-040 | Cap Student-t df at minimum 3.0 | Pending | src/analytics/vol_garch.py | Avoid pathological tail estimates |
+| RL-041 | Model recommendation logic in app (phase 4) | Pending | app/streamlit_app.py | Suggest tier based on horizon + backtest |

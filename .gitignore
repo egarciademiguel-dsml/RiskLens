@@ -29,3 +29,9 @@ Thumbs.db
 
 # Environment
 .env
+
+# Claude Code local config
+.claude/
+
+# Local one-off scripts (notebook transforms, reproducers — not part of the deliverable)
+scripts/
