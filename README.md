@@ -1,4 +1,4 @@
-# RiskLens — Investor Risk Assistant
+# VaRify — Investor Risk Assistant
 
 Decision-support tool for financial asset risk assessment. Combines historical risk analytics, Monte Carlo simulation with multiple volatility models, and statistical backtesting to give investors a clear, quantitative view of downside risk and upside opportunity.
 
@@ -23,7 +23,7 @@ Built with Python and Streamlit. Data sourced from Yahoo Finance via yfinance.
 ```bash
 # Clone and setup
 git clone <repo-url>
-cd RiskLens
+cd VaRify
 python -m venv .venv
 source .venv/Scripts/activate    # Windows
 # source .venv/bin/activate      # Mac/Linux
@@ -50,7 +50,7 @@ make test      # Run test suite
 ## Project Structure
 
 ```
-RiskLens/
+VaRify/
 ├── app/
 │   └── streamlit_app.py          # Interactive dashboard (pure UI, no logic)
 ├── src/

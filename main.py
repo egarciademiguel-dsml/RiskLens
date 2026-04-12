@@ -35,7 +35,7 @@ def purge():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="RiskLens — fetch asset data")
+    parser = argparse.ArgumentParser(description="VaRify — fetch asset data")
     parser.add_argument("--ticker", type=str, help="Asset ticker (e.g. BTC-USD)")
     parser.add_argument("--purge", action="store_true", help="Remove all cached data files")
     args = parser.parse_args()
