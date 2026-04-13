@@ -79,8 +79,8 @@ def recommend_tier(ticker: str, n_days: int) -> str | None:
 
 # --- Page config ---
 
-st.set_page_config(page_title="VaRify", layout="wide")
-st.title("VaRify — Investor Risk Assistant")
+st.set_page_config(page_title="RiskLens", layout="wide")
+st.title("RiskLens — Investor Risk Assistant")
 
 # --- Sidebar inputs ---
 

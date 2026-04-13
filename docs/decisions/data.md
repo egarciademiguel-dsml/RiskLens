@@ -1,6 +1,6 @@
 ontext
 
-VaRify v0.1 is designed as a lightweight, single-source analytical tool.
+RiskLens v0.1 is designed as a lightweight, single-source analytical tool.
 To reduce complexity, avoid premature architecture decisions, and ensure fast iteration, the project will rely exclusively on yfinance as its market data provider during the MVP phase.
 
 This decision simplifies:
@@ -14,7 +14,7 @@ However, it introduces constraints that must be explicitly handled.
 
 Decision
 1. Data Source (MVP Constraint)
-VaRify will use yfinance as the only data source.
+RiskLens will use yfinance as the only data source.
 No support for:
 multiple providers
 APIs aggregation
@@ -103,7 +103,7 @@ caching and persistence strategies
 intraday and alternative datasets
 Key Principle
 
-VaRify is an analysis engine, not a data warehouse.
+RiskLens is an analysis engine, not a data warehouse.
 
 The system prioritizes:
 

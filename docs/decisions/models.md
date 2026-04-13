@@ -2,7 +2,7 @@
 
 ## Context
 
-VaRify v0.1 used a single simulation model: Geometric Brownian Motion (GBM) with constant volatility and normal shocks. Starting with v0.2, the simulation engine was upgraded to support multiple model configurations while keeping the GBM framework as the base.
+RiskLens v0.1 used a single simulation model: Geometric Brownian Motion (GBM) with constant volatility and normal shocks. Starting with v0.2, the simulation engine was upgraded to support multiple model configurations while keeping the GBM framework as the base.
 
 ## Decisions
 

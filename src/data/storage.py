@@ -1,7 +1,7 @@
 """Data storage with no-accumulation policy.
 
 Strategy: overwrite-on-refresh, one file per asset max.
-VaRify is an analysis app, not a data warehouse.
+RiskLens is an analysis app, not a data warehouse.
 """
 
 import os

@@ -1,6 +1,6 @@
 # Project Overview
 
-## VaRify — Investor Risk Assistant
+## RiskLens — Investor Risk Assistant
 
 Decision-support app for contextual financial asset risk assessment. Built with Python and Streamlit.
 

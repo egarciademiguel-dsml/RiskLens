@@ -1,6 +1,6 @@
 # Mathematical Reference
 
-A concise summary of the models, metrics, and assumptions behind VaRify.
+A concise summary of the models, metrics, and assumptions behind RiskLens.
 
 > For the **consolidated assumptions list** (data, GARCH, MS-GARCH, EVT, Monte Carlo, backtesting, HMM), see [`assumptions.md`](assumptions.md). For the **narrative synthesis of findings** across the deep-dive notebooks, see [`conclusions.md`](conclusions.md). This file covers the mathematical definitions; those two cover the interpretation.
 
@@ -82,7 +82,7 @@ Average loss in the worst (1-α) scenarios. Always CVaR ≤ VaR. Captures tail s
 
 ### 3.1 Geometric Brownian Motion (GBM)
 
-The base framework for all simulation in VaRify.
+The base framework for all simulation in RiskLens.
 
 ```
 S(t) = S(0) × exp(Σ log_return(i) for i=1..t)
@@ -201,7 +201,7 @@ Features (12): rolling_vol(5,10,21,63d), rolling_mean(5,10,21d),
 
 ## 4. Model Combinations
 
-The volatility and shock dimensions are independent. VaRify implements 5 volatility models × 2 shock distributions:
+The volatility and shock dimensions are independent. RiskLens implements 5 volatility models × 2 shock distributions:
 
 | | Constant σ | GARCH(1,1) σ(t) | HMM regimes | GMM regimes | XGBoost σ_pred |
 |---|---|---|---|---|---|
