@@ -31,7 +31,13 @@ from src.analytics.monte_carlo import (
     fit_t_distribution,
     fit_garch,
 )
-from src.analytics.backtesting import backtest_var, backtest_summary
+from src.analytics.backtesting import (
+    backtest_var,
+    backtest_summary,
+    constant_fit,
+    garch_fit,
+    ms_garch_fit,
+)
 
 sns.set_theme(style="whitegrid")
 
@@ -450,22 +456,36 @@ with tab_dist:
 
 with tab_bt:
     st.markdown("Rolling-window VaR backtest — checks if predicted VaR is consistent with observed losses.")
+    st.caption(
+        "Model is refit every 21 trading days (monthly cadence) and reused between refits. "
+        "No lookahead. See `notebooks/validation_backtesting.ipynb` for the strict daily-refit reference."
+    )
 
-    # Reuse model already fitted upstream — no refitting per window
+    from functools import partial
     if tier.startswith("MS-GARCH"):
-        _bt_kwargs = {"volatility_model": "ms_garch", "ms_garch_params": ms_info}
+        _fit_fn = partial(ms_garch_fit, n_regimes=2)
     elif tier.startswith("GARCH"):
-        _bt_kwargs = {"volatility_model": "garch", "garch_params": garch_info}
+        _fit_fn = garch_fit
     else:
-        _bt_kwargs = {}
-    fit_fn = lambda rw, s: _bt_kwargs
+        _fit_fn = constant_fit
 
-    with st.spinner("Running backtest..."):
+    _bt_key = ("bt", ticker, tier, str(returns.index[-1].date()), float(confidence))
+    if _bt_key not in st.session_state:
+        _prog = st.progress(0.0, text=f"Preparing backtest ({tier})...")
+
+        def _cb(i, total):
+            _prog.progress(i / total, text=f"Backtest {tier}: window {i}/{total}")
+
         bt_results = backtest_var(
-            close, returns, fit_fn=fit_fn,
+            close, returns, fit_fn=_fit_fn,
             train_window=252, confidence=confidence,
             n_simulations=500, step=5,
+            refit_every=21, progress_callback=_cb,
         )
+        _prog.empty()
+        st.session_state[_bt_key] = bt_results
+    else:
+        bt_results = st.session_state[_bt_key]
 
     if len(bt_results) == 0:
         st.warning("Not enough data for backtest (need >252 trading days).")

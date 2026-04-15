@@ -48,6 +48,8 @@ def backtest_var(
     n_simulations: int = 2_000,
     seed: int = 42,
     step: int = 1,
+    refit_every: int = 1,
+    progress_callback=None,
 ) -> pd.DataFrame:
     """Rolling-window VaR backtest.
 
@@ -60,6 +62,13 @@ def backtest_var(
     n_simulations : MC paths per window (lower = faster).
     seed : random seed.
     step : test every N-th day (1 = every day, 5 = weekly).
+    refit_every : refit the model every N test steps; reuse the last fit
+        between refits. Default 1 = refit every step (strict walk-forward).
+        Higher values trade a small, bounded lookahead-free approximation
+        for large runtime savings (no lookahead because at every test date
+        the model was fit on data ending at or before that date).
+    progress_callback : optional callable(i, total) invoked after each
+        test step. Used by the Streamlit app to drive a progress bar.
 
     Returns
     -------
@@ -67,17 +76,28 @@ def backtest_var(
     """
     results = []
     n_skipped = 0
-    test_indices = range(train_window, len(returns) - 1, step)
+    test_indices = list(range(train_window, len(returns) - 1, step))
+    total = len(test_indices)
 
-    for t in test_indices:
+    cached_kwargs = None
+    steps_since_refit = refit_every  # force fit on first iteration
+
+    for i, t in enumerate(test_indices):
         close_window = close.iloc[:t + 1]
         returns_window = returns.iloc[:t + 1]
 
-        try:
-            model_kwargs = fit_fn(returns_window, seed)
-        except Exception:
-            n_skipped += 1
-            continue
+        if steps_since_refit >= refit_every:
+            try:
+                cached_kwargs = fit_fn(returns_window, seed)
+            except Exception:
+                n_skipped += 1
+                if progress_callback is not None:
+                    progress_callback(i + 1, total)
+                continue
+            steps_since_refit = 1
+        else:
+            steps_since_refit += 1
+        model_kwargs = cached_kwargs
 
         try:
             paths = simulate_paths(
@@ -90,6 +110,8 @@ def backtest_var(
             var = compute_var(final_prices, initial_price, confidence)
         except Exception:
             n_skipped += 1
+            if progress_callback is not None:
+                progress_callback(i + 1, total)
             continue
 
         actual = returns.iloc[t + 1]
@@ -99,6 +121,9 @@ def backtest_var(
             "predicted_var": var,
             "breach": actual < var,
         })
+
+        if progress_callback is not None:
+            progress_callback(i + 1, total)
 
     df = pd.DataFrame(results)
     if len(df) > 0:

@@ -170,6 +170,31 @@ class TestBacktestVar:
         expected_breach = results["actual_return"] < results["predicted_var"]
         pd.testing.assert_series_equal(results["breach"], expected_breach, check_names=False)
 
+    def test_refit_every_reduces_fit_calls(self):
+        """refit_every=N should invoke fit_fn ~ceil(n_test/N) times, and
+        progress_callback should fire exactly n_test times."""
+        close, returns = _make_synthetic_data()
+        n_fits = {"count": 0}
+        progress_log = []
+
+        def counting_fit(returns_window, seed):
+            n_fits["count"] += 1
+            return constant_fit(returns_window, seed)
+
+        results = backtest_var(
+            close, returns, fit_fn=counting_fit,
+            train_window=252, step=5, n_simulations=200,
+            refit_every=20,
+            progress_callback=lambda i, total: progress_log.append((i, total)),
+        )
+        n_test = len(results)
+        assert n_test > 0
+        import math
+        assert n_fits["count"] <= math.ceil(n_test / 20) + 1
+        assert n_fits["count"] < n_test
+        assert len(progress_log) == n_test
+        assert progress_log[-1] == (n_test, n_test)
+
 
 # ---------------------------------------------------------------------------
 # Backtest summary
