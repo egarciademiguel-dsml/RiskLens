@@ -12,10 +12,8 @@ build/
 # Jupyter
 .ipynb_checkpoints/
 
-# Data (no-accumulation policy)
-data/raw/
-data/interim/
-data/processed/
+# Local yfinance cache (gitignored — see src/data/storage.py)
+/data/
 
 # IDE
 .vscode/

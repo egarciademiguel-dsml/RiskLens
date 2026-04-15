@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 
 from src.data.validate import validate_ticker
-from src.data.fetch import fetch_asset_data
+from src.data.storage import get_or_fetch
 from src.data.process import clean_market_data, add_returns
 from src.analytics.risk_metrics import (
     annualized_volatility,
@@ -145,7 +145,7 @@ with st.spinner(f"Validating {ticker}..."):
 
 with st.spinner(f"Fetching data for {ticker}..."):
     try:
-        raw = fetch_asset_data(ticker, start_date=str(start_date), end_date=str(end_date))
+        raw = get_or_fetch(ticker, start_date=str(start_date), end_date=str(end_date))
     except ValueError as e:
         st.error(str(e))
         st.stop()

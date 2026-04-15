@@ -1,9 +1,8 @@
 import argparse
 
 from src.data.validate import validate_ticker
-from src.data.fetch import fetch_asset_data
 from src.data.process import clean_market_data, add_returns
-from src.data.storage import save_asset_data, has_cached_data, cleanup_all_cached_data
+from src.data.storage import get_or_fetch, clear_cache
 
 
 def run(ticker: str):
@@ -12,25 +11,19 @@ def run(ticker: str):
         print(f"ERROR: '{ticker}' is not a valid ticker.")
         return
 
-    if has_cached_data(ticker):
-        print(f"Existing data for {ticker} will be overwritten (no-accumulation policy).")
-
-    print(f"Fetching data for {ticker}...")
-    raw = fetch_asset_data(ticker)
+    print(f"Fetching data for {ticker} (cache hit or yfinance)...")
+    raw = get_or_fetch(ticker)
 
     print("Processing...")
     df = clean_market_data(raw)
     df = add_returns(df)
-
-    out_path = save_asset_data(df, ticker)
-    print(f"Saved to {out_path}")
 
     print("\nPreview:")
     print(df.head(10).to_string())
 
 
 def purge():
-    count = cleanup_all_cached_data()
+    count = clear_cache()
     print(f"Removed {count} cached file(s).")
 
 

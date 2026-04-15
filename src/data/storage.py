@@ -1,69 +1,70 @@
-"""Data storage with no-accumulation policy.
+"""Local yfinance cache.
 
-Strategy: overwrite-on-refresh, one file per asset max.
-RiskLens is an analysis app, not a data warehouse.
+Single flat directory keyed by (ticker, start, end). Cache is gitignored and
+local-only — Streamlit Cloud's filesystem is ephemeral, so caching there is
+a no-op by design. Used to avoid repeated yfinance round-trips during local
+development, notebook runs, and tests.
 """
 
-import os
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 
-from src.config import DATA_PROCESSED_DIR
+from src.config import DATA_DIR, DEFAULT_PERIOD_YEARS
+from src.data.fetch import fetch_asset_data
 
 
-def save_asset_data(df: pd.DataFrame, ticker: str) -> Path:
-    """Save processed data for a single asset, overwriting any previous version."""
-    DATA_PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    path = DATA_PROCESSED_DIR / f"{ticker.upper()}_daily.csv"
-    df.to_csv(path)
-    return path
+def _resolve_dates(start_date: str | None, end_date: str | None) -> tuple[str, str]:
+    """Normalize default dates so the cache key is deterministic."""
+    if end_date is None:
+        end_date = datetime.today().strftime("%Y-%m-%d")
+    if start_date is None:
+        start_date = (
+            datetime.today() - timedelta(days=DEFAULT_PERIOD_YEARS * 365)
+        ).strftime("%Y-%m-%d")
+    return start_date, end_date
 
 
-def load_asset_data(ticker: str) -> pd.DataFrame | None:
-    """Load cached data for an asset. Returns None if no cache exists."""
-    path = DATA_PROCESSED_DIR / f"{ticker.upper()}_daily.csv"
-    if not path.exists():
-        return None
-    return pd.read_csv(path, index_col="date", parse_dates=True)
+def _cache_path(ticker: str, start_date: str, end_date: str) -> Path:
+    return DATA_DIR / f"{ticker.upper()}_{start_date}_{end_date}.csv"
 
 
-def has_cached_data(ticker: str) -> bool:
-    path = DATA_PROCESSED_DIR / f"{ticker.upper()}_daily.csv"
-    return path.exists()
+def get_or_fetch(
+    ticker: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    """Return cached OHLCV data for (ticker, start, end), fetching on miss.
 
+    Cache is a single flat directory. Miss → call `fetch_asset_data`, write CSV,
+    return. Hit → read CSV, return. Default dates are resolved before keying so
+    "5 years ago → today" is a stable key within a single day.
+    """
+    start, end = _resolve_dates(start_date, end_date)
+    path = _cache_path(ticker, start, end)
 
-def delete_asset_data(ticker: str) -> bool:
-    """Remove cached data for a specific asset."""
-    path = DATA_PROCESSED_DIR / f"{ticker.upper()}_daily.csv"
     if path.exists():
-        path.unlink()
-        return True
-    return False
+        return pd.read_csv(path, index_col=0, parse_dates=True)
+
+    df = fetch_asset_data(ticker, start_date=start, end_date=end)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path)
+    return df
 
 
-def list_cached_assets() -> list[str]:
-    """List all tickers that have cached data files."""
-    if not DATA_PROCESSED_DIR.exists():
-        return []
-    return [
-        f.stem.replace("_daily", "")
-        for f in DATA_PROCESSED_DIR.glob("*_daily.csv")
-    ]
-
-
-def cleanup_all_cached_data() -> int:
-    """Remove all cached data files. Returns count of files deleted."""
-    if not DATA_PROCESSED_DIR.exists():
+def clear_cache() -> int:
+    """Remove every cached CSV. Returns number of files deleted."""
+    if not DATA_DIR.exists():
         return 0
-    files = list(DATA_PROCESSED_DIR.glob("*_daily.csv"))
+    files = list(DATA_DIR.glob("*.csv"))
     for f in files:
         f.unlink()
     return len(files)
 
 
-def get_cache_size_bytes() -> int:
-    """Total size of all cached data files in bytes."""
-    if not DATA_PROCESSED_DIR.exists():
-        return 0
-    return sum(f.stat().st_size for f in DATA_PROCESSED_DIR.glob("*_daily.csv"))
+def list_cached() -> list[str]:
+    """List cache file stems (TICKER_START_END)."""
+    if not DATA_DIR.exists():
+        return []
+    return sorted(f.stem for f in DATA_DIR.glob("*.csv"))
