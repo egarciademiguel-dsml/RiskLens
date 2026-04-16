@@ -31,7 +31,7 @@ Decision-support app for contextual financial asset risk assessment. Built with 
 - `notebooks/model_diagnosis.ipynb` — why MS-GARCH fails/passes the backtest; failure-mode taxonomy; overall conclusions.
 - `notebooks/horizon_crossover.ipynb` — horizon at which each tier's ranking flips; drives the app's horizon-aware recommendation.
 
-The three "model_*" notebooks were split from a single 41-cell `model_deep_dive.ipynb` under [RL-042](tickets/RL-042.md) to improve navigability. Each is self-contained and runs standalone in under ~5 minutes.
+The three "model_*" notebooks were split from a single 41-cell `model_deep_dive.ipynb` under [RL-042](../tickets/RL-042.md) to improve navigability. Each is self-contained and runs standalone in under ~5 minutes.
 
 ## Tooling
 

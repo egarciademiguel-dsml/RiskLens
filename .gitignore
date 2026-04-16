@@ -36,3 +36,6 @@ scripts/
 
 # Internal evaluation (defense prep, not public)
 docs/internal_evaluation.md
+
+# Raw reports (absorbed into docs/results/ — kept locally for reference)
+reports/

@@ -111,10 +111,12 @@ The scaling ensures Var(Z) = 1 so drift and σ retain their meaning. Lower df = 
 
 Degrees of freedom fitted via MLE: `scipy.stats.t.fit(returns)`. Clamped df ≥ 2.1 (variance undefined for df ≤ 2).
 
+**Extreme Value Theory (GPD) — implemented in MS-GARCH+EVT tier:**
+Per-regime GPD fitted on standardized residuals' left tail. See [`decisions/models.md`](decisions/models.md) §7c and [`assumptions.md`](assumptions.md) §4.
+
 **Not yet implemented:**
 - Skewed Student-t (Hansen's): adds asymmetry parameter. Captures left-skew in crashes.
 - Generalized Hyperbolic: 4-parameter family (includes NIG, Variance-Gamma). Independent control of skew and tail weight.
-- Extreme Value Theory (GPD): models only the tails. Gold standard for VaR/CVaR.
 
 ### 3.3 Volatility Models
 
@@ -214,16 +216,7 @@ Additionally, regime models (HMM, GMM) support K=1,2,3 regimes, and XGBoost supp
 
 ## 5. Key Assumptions
 
-| Assumption | Impact | Mitigation |
-|---|---|---|
-| Returns are i.i.d. (constant model) | Ignores autocorrelation and clustering | GARCH partially addresses clustering |
-| Log-normal prices (GBM) | Prices always positive | Correct by construction |
-| Historical params = future params | Stationarity assumption | No mitigation; fundamental limitation |
-| No jumps | Misses earnings gaps, flash crashes | Would need jump-diffusion (Merton) |
-| Symmetric shocks (Student-t) | Left/right tails equal | Skewed-t would address this |
-| No transaction costs | Gross returns | Acceptable for risk estimation |
-| 252 trading days/year | Industry standard | Approximate; varies by market |
-| Stationarity within training window (backtest) | Model params fixed per window | Rolling refit; shorter windows adapt faster but noisier |
+For the consolidated assumptions register — what each model assumes, what breaks when the assumption is violated, and how the project mitigates — see [`assumptions.md`](assumptions.md).
 
 ---
 

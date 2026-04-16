@@ -2,7 +2,7 @@
 
 Every quantitative model rests on assumptions, and every finding in [`conclusions.md`](conclusions.md) is conditional on the assumptions in this document. This file consolidates them in one place so a reader can check "does this model apply to my situation?" without having to read the source code.
 
-> **Note on overlap with `docs/decisions/`.** Some assumptions listed here — particularly around MS-GARCH specification — are stated in more depth in `docs/decisions/ms_garch_unified.md`. The overlap is intentional for now: this file is the flat summary, `decisions/` holds the per-decision context. Reconciling the two is explicitly deferred and is not part of [RL-042](tickets/RL-042.md). If you want the derivation, go to `decisions/`. If you want the list, stay here.
+> For derivations and literature justification, see [`decisions/models.md`](decisions/models.md) §7.
 
 ---
 
@@ -42,7 +42,7 @@ No correction is applied. The bias is acknowledged and left to the user to accou
 ## 2. GARCH(1,1) assumptions
 
 ### 2.1 Stationarity: α + β < 1
-The GARCH(1,1) variance equation $\sigma_t^2 = \omega + \alpha \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2$ has a finite unconditional variance $\sigma_{lr}^2 = \omega / (1 - \alpha - \beta)$ **only when α + β < 1**. Every formula in the project that uses $\sigma_{lr}$ (long-run vol reporting, variance-targeted ω reparametrization in MS-GARCH, mean-reversion half-life) assumes this holds. In practice the `arch` library's MLE almost always converges to a stationary solution; on the rare occasion it does not, the behavior is undefined and the app should treat it as a fit failure.
+The GARCH(1,1) variance equation (see [`mathematical_reference.md`](mathematical_reference.md) §3.3) has a finite unconditional variance $\sigma_{lr}^2 = \omega / (1 - \alpha - \beta)$ **only when α + β < 1**. Every formula in the project that uses $\sigma_{lr}$ (long-run vol reporting, variance-targeted ω reparametrization in MS-GARCH, mean-reversion half-life) assumes this holds. In practice the `arch` library's MLE almost always converges to a stationary solution; on the rare occasion it does not, the behavior is undefined and the app should treat it as a fit failure.
 
 ### 2.2 Constant unconditional variance
 Under α + β < 1 the model assumes the *unconditional* variance $\sigma_{lr}^2$ is constant over the fit window. If the true DGP has a structural break (pre-/post-COVID, pre-/post-regulatory-change), GARCH will average across it and produce a long-run vol that matches neither sub-regime. **The MS-GARCH tier is the project's explicit answer to this assumption violation**: it replaces one constant $\sigma_{lr}$ with per-regime $\sigma_{lr,k}$.
@@ -53,12 +53,12 @@ GARCH(1,1) is **symmetric** in the sense that positive and negative shocks of th
 ### 2.4 Student-t innovations for the GARCH+t tier
 The GARCH+t tier uses **Student-t innovations with a fitted degrees-of-freedom parameter**. The fit is done via `scipy.stats.t.fit` on the standardized residuals from the GARCH pre-fit. No prior or regularization is applied to df.
 
-**df ≥ 3 as a stability indicator (not a cap — see [RL-040](tickets/RL-040.md) reframe).** When the fitted df is below 3, the tail is heavier than a finite-variance Student-t can express: df < 2 gives infinite variance, and 2 ≤ df < 3 gives finite variance but infinite kurtosis. In either case GARCH's long-run variance $\sigma_{lr}^2$ is theoretically undefined and the GARCH+t tier's results should be treated as unreliable for that asset.
+**df ≥ 3 as a stability indicator (not a cap — see [RL-040](../tickets/RL-040.md) reframe).** When the fitted df is below 3, the tail is heavier than a finite-variance Student-t can express: df < 2 gives infinite variance, and 2 ≤ df < 3 gives finite variance but infinite kurtosis. In either case GARCH's long-run variance $\sigma_{lr}^2$ is theoretically undefined and the GARCH+t tier's results should be treated as unreliable for that asset.
 
 The project's original RL-040 proposed hard-capping df at 3.0 to avoid pathological tail estimates. **Reframed under RL-042**: do NOT cap. Capping hides information — the user's data is telling you that the tail is genuinely heavier than the GARCH+t model can represent, and that fact should surface as a *warning* rather than being silently fixed. A "model instability" indicator at df < 3 is a better design than a cap because:
 
 1. It preserves the raw fit for diagnostics.
-2. It is consistent with the project's transparency philosophy ([RL-039](tickets/RL-039.md) surfaces GPD fallbacks rather than hiding them).
+2. It is consistent with the project's transparency philosophy ([RL-039](../tickets/RL-039.md) surfaces GPD fallbacks rather than hiding them).
 3. It tells the user to use MS-GARCH+EVT instead, where the per-regime GPD can represent heavier tails theoretically.
 
 Implementation of the warning is deferred; the reframe is noted in the ticket registry under RL-040.
@@ -67,26 +67,13 @@ Implementation of the warning is deferred; the reframe is noted in the ticket re
 
 ## 3. MS-GARCH unified-spec assumptions
 
-See [`decisions/ms_garch_unified.md`](decisions/ms_garch_unified.md) for the full derivation. Flat list:
+Full derivation and literature justification: [`decisions/models.md`](decisions/models.md) §7.
 
-### 3.1 Two regimes, fixed
-The HMM is fit with **n_regimes = 2** (calm and crisis). 3-regime configurations exist in the codebase (RL-016, RL-017) but are not used in the 3-tier simulation pipeline. Two regimes are enough to capture the dominant bimodality of crypto and equity-index returns without running into the sparse-regime identification problems a 3-regime HMM would face on 252 days.
-
-### 3.2 Gaussian HMM emissions
-The HMM uses **Gaussian emissions on daily returns** (via `hmmlearn.GaussianHMM`). This is a mild assumption because the HMM is only being used for *regime labeling*, not for return prediction — the tail modeling is delegated to per-regime GPD, and the conditional volatility is delegated to the global GARCH. The Gaussian emission is essentially doing threshold detection on the level of daily returns, and that works even when the true conditional distribution is not Gaussian.
-
-### 3.3 Shared GARCH persistence across regimes
-The unified spec fits **one global GARCH(1,1)** on the full pooled return series, so α and β are shared across regimes. Per-regime variation enters only through ω (reparametrized via variance targeting). This is an *assumption*, and a material one: the ARCH/GARCH reactivity is assumed to be the same in calm and crisis regimes, even though one could argue crisis regimes should have higher α (shock impact) and lower β (persistence decay).
-
-**Why shared persistence.** The MS-GARCH literature (Haas/Mittnik/Paolella 2004, Klaassen 2002, Marcucci 2005, Ardia et al. 2018) converges on intercept-only switching as the most stable specification, primarily because allowing per-regime α and β creates *path-dependence*: each regime's σ² at time $t$ would depend on every possible regime history up to $t$, which is computationally and statistically intractable. Shared persistence avoids this at the cost of the modeling concession above.
-
-### 3.4 Per-regime GPD tails
-Each regime gets its own Generalized Pareto Distribution fit on the regime-filtered **standardized residuals** from the global GARCH fit. The GPD shape parameter ξ is estimated per regime; the threshold is per regime.
-
-**Fallback rule.** When a regime has fewer than ~50 threshold exceedances (typically the crisis regime on short samples), the GPD fit is unreliable and the code falls back to a Normal tail for that regime. The fallback is **surfaced explicitly in the Streamlit app** ([RL-039](tickets/RL-039.md)), not hidden. The user sees which regimes are on real GPD and which are on Normal fallback.
-
-### 3.5 Variance-targeted ω per regime
-Under the unified spec, $\omega_k = \sigma_{lr,k}^2 (1 - \alpha - \beta)$ where $\sigma_{lr,k}^2$ is estimated from the regime's own sample variance. This is [Engle & Mezrich (1996)](https://www.researchgate.net/publication/243758022_GARCH_for_Groups) variance targeting applied per regime. The assumption is that the **empirical regime-conditional variance is a good estimator of the regime's true unconditional variance** — reasonable for the calm regime (many observations), weaker for the crisis regime (sparse), and is one of the known sources of residual miscalibration.
+- **3.1 Two regimes, fixed.** HMM with n_regimes = 2 (calm/crisis). Two regimes capture the dominant bimodality without sparse-regime identification problems on 252-day windows.
+- **3.2 Gaussian HMM emissions.** Mild assumption — HMM only provides regime labels; tail modeling is delegated to per-regime GPD, vol dynamics to global GARCH.
+- **3.3 Shared GARCH persistence.** One global GARCH(1,1) on the pooled series → shared (α, β). Per-regime variation enters only through ω (variance targeting). Literature consensus: intercept-only switching is the most stable specification and avoids path-dependence.
+- **3.4 Per-regime GPD tails.** GPD fitted on regime-filtered standardized residuals. Fallback to Normal when < 50 exceedances — surfaced explicitly in the app ([RL-039](../tickets/RL-039.md)).
+- **3.5 Variance-targeted ω.** $\omega_k = \sigma_{lr,k}^2 (1 - \alpha - \beta)$ with $\sigma_{lr,k}^2$ from the regime's sample variance. Reasonable for calm (many obs), weaker for crisis (sparse) — a known source of residual miscalibration.
 
 ---
 
@@ -113,13 +100,13 @@ The Pickands–Balkema–de Haan theorem says that for sufficiently high thresho
 **`N_SIMS = 10,000`** paths is the default across the deep-dive notebooks. The backtest uses a lower `n_simulations = 2,000` per window to keep the rolling-window refit tractable.
 
 ### 5.2 Seed sensitivity and multi-seed stability
-Single-seed estimates can be misleading for heavy-tailed distributions. [RL-031](tickets/RL-031.md) added a reusable `run_multi_seed` / `robustness_summary` module and the deep-dive notebook runs every tier across 10 seeds to report a coefficient of variation per metric. Seed sensitivity is **stability, not accuracy**. A low CV means the Monte Carlo estimator has converged; it does not mean the converged number is right. This is a deliberately repeated caveat because it is the most common misreading of robustness results.
+Single-seed estimates can be misleading for heavy-tailed distributions. [RL-031](../tickets/RL-031.md) added a reusable `run_multi_seed` / `robustness_summary` module and the deep-dive notebook runs every tier across 10 seeds to report a coefficient of variation per metric. Seed sensitivity is **stability, not accuracy**. A low CV means the Monte Carlo estimator has converged; it does not mean the converged number is right. This is a deliberately repeated caveat because it is the most common misreading of robustness results.
 
 ### 5.3 Antithetic variates / variance reduction
 **Not used.** The project does not apply antithetic variates, control variates, or importance sampling to reduce Monte Carlo variance. At 10,000 paths the residual MC noise is small enough that variance reduction is not critical for the project's use cases, and adding it would complicate the model-owned innovation architecture (RL-026) that makes the tiers comparable in the first place.
 
 ### 5.4 Model-owned innovations
-**Each volatility model owns its own innovation distribution.** Constant → Normal, GARCH → Student-t, MS-GARCH → EVT/GPD. This is [RL-026](tickets/RL-026.md)'s refactor and is a structural design decision, not a tuning parameter. Before RL-026, all models shared one innovation toggle, which made the pure-vol and pure-tail comparisons in `model_comparison.ipynb` impossible — the models would collapse to scaled versions of the same underlying process. Model-owned innovations are what make the 3-tier comparison meaningful at all.
+**Each volatility model owns its own innovation distribution.** Constant → Normal, GARCH → Student-t, MS-GARCH → EVT/GPD. This is [RL-026](../tickets/RL-026.md)'s refactor and is a structural design decision, not a tuning parameter. Before RL-026, all models shared one innovation toggle, which made the pure-vol and pure-tail comparisons in `model_comparison.ipynb` impossible — the models would collapse to scaled versions of the same underlying process. Model-owned innovations are what make the 3-tier comparison meaningful at all.
 
 ---
 
