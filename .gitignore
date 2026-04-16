@@ -38,4 +38,4 @@ scripts/
 docs/internal_evaluation.md
 
 # Raw reports (absorbed into docs/results/ — kept locally for reference)
-reports/
+private/

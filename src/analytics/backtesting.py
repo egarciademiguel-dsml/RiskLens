@@ -7,6 +7,7 @@ from scipy.stats import chi2
 from src.analytics.monte_carlo import (
     simulate_paths, compute_var, fit_garch, fit_hmm, fit_gmm,
 )
+from src.analytics.loss_functions import lopez_loss
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +325,7 @@ def compare_models(
         )
         summary = backtest_summary(bt, confidence)
         mean_var = float(bt["predicted_var"].mean()) if len(bt) > 0 else 0.0
+        lopez = lopez_loss(bt)
         rows.append({
             "model": name,
             "n_obs": summary["n_obs"],
@@ -335,6 +337,7 @@ def compare_models(
             "christoffersen_p": summary["christoffersen"]["p_value"],
             "christoffersen_pass": summary["christoffersen"]["pass"],
             "mean_predicted_var": mean_var,
+            "lopez_mean": lopez["mean"],
         })
 
     df = pd.DataFrame(rows).set_index("model")
@@ -355,13 +358,18 @@ def compare_models(
         .rank(method="min").astype(int)
     )
 
+    # Economic rank: lowest Lopez mean loss wins
+    df["economic_rank"] = df["lopez_mean"].rank(method="min").astype(int)
+
     best_cal = df["calibration_rank"].idxmin()
     most_cons = df["conservative_rank"].idxmin()
+    best_econ = df["economic_rank"].idxmin()
 
     return {
         "results": df,
         "best_calibrated": best_cal,
         "most_conservative": most_cons,
+        "best_economic": best_econ,
     }
 
 
