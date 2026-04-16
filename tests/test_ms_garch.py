@@ -42,7 +42,9 @@ class TestFitMsGarch:
 
     def test_returns_expected_keys(self, ms_garch_params):
         expected = {"hmm_result", "n_regimes", "regime_garch", "regime_gpd",
-                    "regime_mu", "current_regime", "min_regime_obs"}
+                    "regime_mu", "current_regime", "min_regime_obs",
+                    "global_alpha", "global_beta", "global_persistence",
+                    "garch_fit_failed", "gpd_fit_failed_regimes"}
         assert set(ms_garch_params.keys()) == expected
 
     def test_n_regimes_param_count(self, ms_garch_params):
@@ -143,14 +145,17 @@ class TestFallbacks:
         assert fb["persistence"] == 0.0
         assert abs(fb["omega"] - 0.02**2) < 1e-10
 
-    def test_small_regime_uses_fallback(self, market_data):
-        """With min_regime_obs very high, all regimes should fall back."""
+    def test_shared_persistence_across_regimes(self, market_data):
+        """Post-RL-034: alpha and beta are global (shared across regimes).
+        Only omega varies per regime via variance targeting."""
         _, returns = market_data
-        result = fit_ms_garch(returns, n_regimes=2, seed=42, min_regime_obs=10000)
-        for gp in result["regime_garch"]:
-            # Fallback: alpha=0, beta=0
-            assert gp["alpha"] == 0.0
-            assert gp["beta"] == 0.0
+        result = fit_ms_garch(returns, n_regimes=2, seed=42)
+        alphas = [gp["alpha"] for gp in result["regime_garch"]]
+        betas = [gp["beta"] for gp in result["regime_garch"]]
+        assert len(set(alphas)) == 1
+        assert len(set(betas)) == 1
+        assert alphas[0] == result["global_alpha"]
+        assert betas[0] == result["global_beta"]
 
 
 # ---------------------------------------------------------------------------
