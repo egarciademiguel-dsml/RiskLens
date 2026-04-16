@@ -73,11 +73,13 @@ def tune_hyperparameters(
     return best_params
 
 
-def engineer_features(returns: pd.Series) -> pd.DataFrame:
+def engineer_features(returns: pd.Series, volume: pd.Series | None = None) -> pd.DataFrame:
     """Build rolling features for conditional VaR prediction.
 
     Features: rolling vol (5/10/21/63d), rolling mean return (5/10/21d),
-    rolling skew (21d), rolling kurtosis (21d), abs return, squared return.
+    rolling skew (21d), rolling kurtosis (21d), abs return, squared return,
+    realized variance (5d), downside vol (21d). Optionally: volume ratio
+    and rolling volume vol if a volume series is provided.
     """
     df = pd.DataFrame({"returns": returns})
 
@@ -91,6 +93,13 @@ def engineer_features(returns: pd.Series) -> pd.DataFrame:
     df["kurtosis_21d"] = returns.rolling(21).kurt()
     df["abs_ret"] = returns.abs()
     df["sq_ret"] = returns ** 2
+    df["rv_5d"] = (returns ** 2).rolling(5).sum()
+    df["downside_vol_21d"] = returns.clip(upper=0).rolling(21).std()
+
+    if volume is not None:
+        vol_s = volume.reindex(returns.index)
+        df["volume_ratio"] = vol_s / vol_s.rolling(21).mean()
+        df["volume_vol_21d"] = vol_s.rolling(21).std() / vol_s.rolling(21).mean()
 
     df = df.dropna()
     return df
@@ -163,6 +172,37 @@ def fit_quantile_model(
     if tune:
         result["best_params"] = best_params
     return result
+
+
+def explain_var(model_result: dict, returns: pd.Series, volume: pd.Series | None = None) -> dict:
+    """SHAP-based explanation of XGBoost VaR predictions.
+
+    Returns dict with shap_values (array), feature_names, base_value,
+    and feature_importance (mean |SHAP| per feature, sorted descending).
+    """
+    import shap
+
+    features = engineer_features(returns, volume=volume)
+    feature_cols = model_result["feature_cols"]
+    X = features[feature_cols].values
+    X_scaled = model_result["scaler"].transform(X)
+
+    explainer = shap.TreeExplainer(model_result["model"])
+    shap_values = explainer.shap_values(X_scaled)
+
+    mean_abs_shap = np.abs(shap_values).mean(axis=0)
+    importance_order = np.argsort(-mean_abs_shap)
+    feature_importance = [
+        {"feature": feature_cols[i], "mean_abs_shap": float(mean_abs_shap[i])}
+        for i in importance_order
+    ]
+
+    return {
+        "shap_values": shap_values,
+        "feature_names": feature_cols,
+        "base_value": float(explainer.expected_value),
+        "feature_importance": feature_importance,
+    }
 
 
 def predict_var(model_result: dict, recent_returns: pd.Series) -> float:

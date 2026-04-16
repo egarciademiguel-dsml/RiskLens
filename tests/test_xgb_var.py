@@ -6,6 +6,7 @@ from src.analytics.xgb_var import (
     engineer_features,
     fit_quantile_model,
     predict_var,
+    explain_var,
     backtest_quantile_var,
     pinball_loss,
     tune_hyperparameters,
@@ -43,8 +44,20 @@ class TestEngineerFeatures:
         features = engineer_features(market_data)
         expected = {"returns", "vol_5d", "vol_10d", "vol_21d", "vol_63d",
                     "mean_ret_5d", "mean_ret_10d", "mean_ret_21d",
-                    "skew_21d", "kurtosis_21d", "abs_ret", "sq_ret"}
+                    "skew_21d", "kurtosis_21d", "abs_ret", "sq_ret",
+                    "rv_5d", "downside_vol_21d"}
         assert set(features.columns) == expected
+
+    def test_volume_features_when_provided(self, market_data):
+        volume = pd.Series(np.random.randint(1000, 10000, len(market_data)),
+                           index=market_data.index, name="volume")
+        features = engineer_features(market_data, volume=volume)
+        assert "volume_ratio" in features.columns
+        assert "volume_vol_21d" in features.columns
+
+    def test_no_volume_features_when_omitted(self, market_data):
+        features = engineer_features(market_data)
+        assert "volume_ratio" not in features.columns
 
     def test_fewer_rows_than_input(self, market_data):
         features = engineer_features(market_data)
@@ -226,3 +239,33 @@ class TestBacktestQuantileVar:
                                    train_window=200, step=10)
         expected = bt["actual_return"] < bt["predicted_var"]
         pd.testing.assert_series_equal(bt["breach"], expected, check_names=False)
+
+
+# ---------------------------------------------------------------------------
+# SHAP explanation
+# ---------------------------------------------------------------------------
+
+class TestExplainVar:
+
+    def test_returns_expected_keys(self, market_data):
+        model_result = fit_quantile_model(market_data, quantile=0.05)
+        result = explain_var(model_result, market_data)
+        expected = {"shap_values", "feature_names", "base_value", "feature_importance"}
+        assert set(result.keys()) == expected
+
+    def test_shap_values_shape(self, market_data):
+        model_result = fit_quantile_model(market_data, quantile=0.05)
+        result = explain_var(model_result, market_data)
+        n_features = len(result["feature_names"])
+        assert result["shap_values"].shape[1] == n_features
+
+    def test_feature_importance_sorted(self, market_data):
+        model_result = fit_quantile_model(market_data, quantile=0.05)
+        result = explain_var(model_result, market_data)
+        importances = [f["mean_abs_shap"] for f in result["feature_importance"]]
+        assert importances == sorted(importances, reverse=True)
+
+    def test_base_value_is_float(self, market_data):
+        model_result = fit_quantile_model(market_data, quantile=0.05)
+        result = explain_var(model_result, market_data)
+        assert isinstance(result["base_value"], float)

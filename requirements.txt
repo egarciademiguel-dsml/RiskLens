@@ -9,6 +9,7 @@ seaborn
 plotly
 scikit-learn
 xgboost
+shap
 statsmodels
 streamlit
 requests
