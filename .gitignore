@@ -12,6 +12,9 @@ build/
 # Jupyter
 .ipynb_checkpoints/
 
+# Pytest
+.pytest_cache/
+
 # Local yfinance cache (gitignored — see src/data/storage.py)
 /data/
 
